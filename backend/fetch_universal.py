@@ -336,17 +336,21 @@ def fetch_betfair():
 
     active_market_ids = set()
     update_time = datetime.now(timezone.utc).isoformat()
-    rows_to_insert = {} 
+    best_price_map = {} 
 
     for sport_conf in SPORTS_CONFIG:
         try:
-            now = pd.Timestamp.now(tz='UTC')
+            # Timezone-aware "Now" for filter logic
+            now_utc = datetime.now(timezone.utc)
+            
+            # Pandas timestamp for the API filter (API requires strict format)
+            now_pd = pd.Timestamp.now(tz='UTC')
             
             filter_args = {
                 'market_type_codes': ['MATCH_ODDS'],
                 'market_start_time': {
-                    'from': (now - pd.Timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ"),          
-                    'to': (now + pd.Timedelta(days=90)).strftime("%Y-%m-%dT%H:%M:%SZ") 
+                    'from': (now_pd - pd.Timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ"),          
+                    'to': (now_pd + pd.Timedelta(days=90)).strftime("%Y-%m-%dT%H:%M:%SZ") 
                 }
             }
 
@@ -360,7 +364,7 @@ def fetch_betfair():
             market_filter = filters.market_filter(**filter_args)
             
             markets = trading.betting.list_market_catalogue(
-                filter=market_filter, max_results=200, 
+                filter=market_filter, max_results=500, 
                 market_projection=['MARKET_START_TIME', 'EVENT', 'COMPETITION', 'RUNNER_METADATA'],
                 sort='FIRST_TO_START'
             )
@@ -370,16 +374,29 @@ def fetch_betfair():
             price_projection = filters.price_projection(price_data=['EX_BEST_OFFERS', 'EX_TRADED'], virtualise=True)
             market_ids = [m.market_id for m in markets]
 
-            for batch in chunker(market_ids, 5):
+            for batch in chunker(market_ids, 10): 
                 market_books = trading.betting.list_market_book(market_ids=batch, price_projection=price_projection)
                 
                 for book in market_books:
-                    active_market_ids.add(book.market_id)
                     market_info = next((m for m in markets if m.market_id == book.market_id), None)
                     if not market_info: continue
 
-                    comp_name = "Unknown League"
-                    if market_info.competition: comp_name = market_info.competition.name
+                    # --- FIXED ZOMBIE FILTER ---
+                    # Ensure start_time is UTC-aware before subtracting
+                    start_dt = market_info.market_start_time
+                    if start_dt.tzinfo is None:
+                        start_dt = start_dt.replace(tzinfo=timezone.utc)
+                    
+                    seconds_to_start = (start_dt - now_utc).total_seconds()
+                    volume = book.total_matched or 0
+                    
+                    # Ignore markets with < £10 matched if they are starting soon (garbage/duplicate detection)
+                    if volume < 10 and seconds_to_start < 3600:
+                         continue
+                    # ---------------------------
+
+                    active_market_ids.add(book.market_id)
+                    comp_name = market_info.competition.name if market_info.competition else "Unknown League"
 
                     for runner in book.runners:
                         if runner.status == 'ACTIVE':
@@ -390,41 +407,36 @@ def fetch_betfair():
                             back = runner.ex.available_to_back[0].price if runner.ex.available_to_back else 0.0
                             lay = runner.ex.available_to_lay[0].price if runner.ex.available_to_lay else 0.0
                             
-                            cache_key = f"{sport_conf['name']}_{name}"
-                            if cache_key not in opening_prices_cache and back > 0 and (book.total_matched or 0) > 500:
-                                opening_prices_cache[cache_key] = back
+                            # Deduplication Logic
+                            dedup_key = f"{market_info.event.name}_{name}"
+                            current_best = best_price_map.get(dedup_key)
                             
-                            unique_key = (book.market_id, name)
-                            rows_to_insert[unique_key] = {
-                                "sport": sport_conf['name'],
-                                "market_id": book.market_id,
-                                "event_name": market_info.event.name,
-                                "runner_name": name,
-                                "competition": comp_name, 
-                                "back_price": back,
-                                "lay_price": lay,
-                                "volume": int(book.total_matched or 0),
-                                "opening_price": opening_prices_cache.get(cache_key, None),
-                                "start_time": market_info.market_start_time.strftime("%Y-%m-%dT%H:%M:%SZ"),
-                                "in_play": book.inplay,
-                                "market_status": book.status,
-                                "last_updated": update_time
-                            }
-        except: pass
+                            if not current_best or volume > current_best['volume']:
+                                best_price_map[dedup_key] = {
+                                    "sport": sport_conf['name'],
+                                    "market_id": book.market_id,
+                                    "event_name": market_info.event.name,
+                                    "runner_name": name,
+                                    "competition": comp_name, 
+                                    "back_price": back,
+                                    "lay_price": lay,
+                                    "volume": int(volume),
+                                    "start_time": market_info.market_start_time.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                                    "in_play": book.inplay,
+                                    "market_status": book.status,
+                                    "last_updated": update_time
+                                }
 
-    if rows_to_insert:
+        except Exception as e:
+            logger.error(f"Error fetching {sport_conf['name']}: {e}")
+
+    # Commit Winners
+    if best_price_map:
         try:
-            final_data = list(rows_to_insert.values())
+            final_data = list(best_price_map.values())
             supabase.table('market_feed').upsert(final_data, on_conflict='market_id, runner_name').execute()
-            logger.info(f"⚡ Synced {len(final_data)} items.")
+            logger.info(f"⚡ Synced {len(final_data)} items (High Volume filtered).")
         except Exception as e: logger.error(f"Database Error: {e}")
-
-    try:
-        db_open = supabase.table('market_feed').select('market_id').neq('market_status', 'CLOSED').execute()
-        ghost_ids = [row['market_id'] for row in db_open.data if row['market_id'] not in active_market_ids]
-        if ghost_ids:
-            supabase.table('market_feed').update({'market_status': 'CLOSED'}).in_('market_id', ghost_ids).execute()
-    except: pass
 
 if __name__ == "__main__":
     logger.info("--- STARTING UNIVERSAL ENGINE (PROXIMITY OPTIMIZED + TIMEOUT) ---")
