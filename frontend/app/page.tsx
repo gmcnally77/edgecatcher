@@ -135,11 +135,12 @@ export default function Home() {
 
     if (!error && data) {
       const now = new Date();
-      const heartbeatCutoff = new Date(now.getTime() - 120 * 1000); 
+      // Relaxed to 10 minutes (600s) to prevent aggressive hiding due to clock drift
+      const heartbeatCutoff = new Date(now.getTime() - 600 * 1000); 
 
       const activeRows = data.filter((row: any) => {
         if (row.last_updated && new Date(row.last_updated) < heartbeatCutoff) return false;
-        if (row.market_status === 'CLOSED') return false;
+        if (row.market_status === 'CLOSED' || row.market_status === 'SETTLED') return false;
         return true; 
       });
 

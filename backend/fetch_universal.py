@@ -73,7 +73,7 @@ def fetch_cached_odds(sport_key, ttl_seconds, region='uk,eu,us'):
     now = time.time()
 
     # 1. Check Cache Age
-    if os.path.exists(cache_file):
+    if os.path.exists(cache_file) and ttl_seconds > TTL_INPLAY_SECONDS:
         file_age = now - os.path.getmtime(cache_file)
         if file_age < ttl_seconds:
             try:
@@ -146,24 +146,40 @@ def normalize(name):
     return re.sub(r'[^a-z0-9]', '', str(name).lower())
 
 def normalize_af(name):
-    if not name:
-        return ""
+    if not name: return ""
     name = str(name).lower()
-    garbage = ["football team", "university", "univ.", "univ", " the ", " at "]
+    # Bridge common NCAA abbreviations to their full school names before stripping mascots
+    if "florida international" in name or name == "fiu" or "florida intl" in name: return "fiu"
+    if "texas san antonio" in name or name == "utsa": return "utsa"
+    if "brigham young" in name or name == "byu": return "byu"
+    if "connecticut" in name or "uconn" in name: return "uconn"
+    
+    garbage = [
+        "football team", "university", "univ.", "univ", " the ", " at ",
+        "hilltoppers", "golden eagles", "hurricanes", "commanders", "vikings",
+        "lions", "cowboys", "giants", "jets", "wildcats", "redbirds", "bobcats",
+        "panthers", "roadrunners", "bulldogs", "lobos", "cougars",
+        "black knights", "huskies", "redhawks"
+    ]
+
     for word in garbage:
         name = name.replace(word, "")
     name = name.replace(" st.", " state").replace(" st ", " state ")
     return re.sub(r'[^a-z0-9]', '', name)
 
 def check_match(name_a, name_b):
-    if name_a == name_b:
-        return True
-    if name_a in name_b or name_b in name_a:
-        return True
-    if name_a in ALIAS_MAP and name_b in ALIAS_MAP[name_a]:
-        return True
-    if name_b in ALIAS_MAP and name_a in ALIAS_MAP[name_b]:
-        return True
+    if not name_a or not name_b: return False
+    if name_a == name_b: return True
+    
+    # Check explicit Alias Map first
+    if name_a in ALIAS_MAP and name_b in ALIAS_MAP[name_a]: return True
+    if name_b in ALIAS_MAP and name_a in ALIAS_MAP[name_b]: return True
+
+    # Fuzzy match: Ensure we catch "westernkentucky" in "westernkentuckyhilltoppers"
+    # only if the core string is significant (over 4 chars) to avoid false positives
+    if len(name_a) > 4 and name_a in name_b: return True
+    if len(name_b) > 4 and name_b in name_a: return True
+    
     return False
 
 # --- IN-PLAY CHECK (MINIMAL QUERY) ---
@@ -329,21 +345,43 @@ def run_spy():
                 norm_name = norm_func_api(raw_name)
 
                 for row in active_rows:
+                    # BLOCK COLLISION: Ensure NFL only matches NFL, etc.
+                    # row['sport'] is the DB label ('NFL'), sport['name'] is from config
                     if row['sport'] != sport['name']:
                         continue
-                    if not row['start_time']:
+                        
+                    # REPAIRED: Sub-Sport Check (Case-Insensitive)
+                    is_ncaa_api = 'ncaaf' in sport['odds_api_key'].lower()
+                    
+                    # Inspect for College indicators
+                    event_name_raw = str(row.get('event_name') or "").upper()
+                    comp_name_raw = str(id_to_row_map.get(row['id'], {}).get('competition') or "").upper()
+                    sport_label = str(row.get('sport') or "").upper()
+                    
+                    # Logic: Is this specific DB row a College game?
+                    is_ncaa_db = any(x in event_name_raw or x in comp_name_raw or x in sport_label for x in ['NCAA', 'COLLEGE', 'FCS'])
+                    
+                    # Relax: Only block if it is explicitly NFL vs NCAA mismatch.
+                    if sport['name'] == 'NFL' and is_ncaa_api != is_ncaa_db:
                         continue
-
+                    
+                    # 1. Time Check (Unchanged)
                     tolerance = 108000 if not strict_mode else 43200
                     delta = abs((row['start_time'] - api_start).total_seconds())
                     if delta > tolerance:
                         continue
 
-                    runner_match = check_match(norm_name, row['norm_runner'])
+                    # 2. Direct & Fuzzy Runner Match
+                    # Priority: Exact match of normalized strings, then substring
+                    runner_match = (norm_name == row['norm_runner']) or \
+                                   (norm_name in row['norm_runner'] or row['norm_runner'] in norm_name)
+                    
                     is_match = False
 
                     if strict_mode:
-                        if runner_match and check_match(api_home, row['norm_event']) and check_match(api_away, row['norm_event']):
+                        # Fuzzy Event Match (Home or Away team check)
+                        event_match = (api_home in row['norm_event'] or api_away in row['norm_event'])
+                        if runner_match and event_match:
                             is_match = True
                     else:
                         if runner_match:
@@ -366,7 +404,8 @@ def run_spy():
                         'id': row_id,
                         'sport': orig_row.get('sport'),
                         'market_id': orig_row.get('market_id'),
-                        'runner_name': orig_row.get('runner_name')
+                        'runner_name': orig_row.get('runner_name'),
+                        'last_updated': datetime.now(timezone.utc).isoformat()
                     }
 
                 def find_price(odds_list, target_name):
@@ -398,7 +437,8 @@ def run_spy():
         logger.info(f"Spy: Updating {len(updates)} rows...")
         data_list = list(updates.values())
         for i in range(0, len(data_list), 100):
-            supabase.table('market_feed').upsert(data_list[i:i+100]).execute()
+            # Use upsert with id as conflict target to refresh timestamps and prices
+            supabase.table('market_feed').upsert(data_list[i:i+100], on_conflict='id').execute()
 
 def chunker(seq, size):
     return (seq[pos:pos + size] for pos in range(0, len(seq), size))

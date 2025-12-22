@@ -27,12 +27,12 @@ SPORTS_CONFIG = [
         "text_query": "NFL",
         "odds_api_key": "americanfootball_nfl"
     },
-{
+    {
         "name": "NFL", 
         "betfair_id": "6423",
         "text_query": "NCAA Football",
         "odds_api_key": "americanfootball_ncaaf",
-        "strict_mode": False  # <--- MUST BE FALSE for College prices to appear
+        "strict_mode": False  # Force fuzzy matching for high-variance NCAA names
     },
     {
         "name": "NFL",
@@ -52,70 +52,74 @@ SPORTS_CONFIG = [
 
 # --- ALIAS MAP ---
 ALIAS_MAP = {
-    # MMA Specifics
+    # MMA Specifics (Consolidated)
     "alexandervolkanovski": ["alexvolkanovski"], 
     "alexvolkanovski": ["alexandervolkanovski"],
-
-    # Just in case for Lopes
     "diegolopes": ["diegolopez"],
     "diegolopez": ["diegolopes"],
     
-    # NFL
+    # NFL (Standardized to handle market vs. full names)
     "washington": ["washingtoncommanders", "commanders"],
     "washingtoncommanders": ["washington"],
     "detroit": ["detroitlions"],
     "detroitlions": ["detroit"],
-    "minnesota": ["minnesotavikings"],
-    "minnesotavikings": ["minnesota"],
+    "minnesotavikings": ["minnesota"], # Strict for NFL
+    "minnesotagoldengophers": ["minnesota", "minnesotagophers"], # Strict for NCAA
     "dallas": ["dallascowboys"],
     "dallascowboys": ["dallas"],
     "nygiants": ["newyorkgiants"],
     "newyorkgiants": ["nygiants"],
     "nyjets": ["newyorkjets"],
     "newyorkjets": ["nyjets"],
+    "baltimore": ["baltimoreravens"],
+    "greenbay": ["greenbaypackers"],
+    "cincinnati": ["cincinnatibengals"],
+    "arizona": ["arizonacardinals"],
+    "indianapolis": ["indianapoliscolts"],
+    "jacksonville": ["jacksonvillejaguars"],
     
-    # NCAAF
-    "miami": ["miamifl", "miamiflorida", "miamihurricanes"],
+    # NCAAF (Bridging school names and mascots)
+    "miami": ["miamifl", "miamiflorida", "miamihurricanes", "miamioh", "miamiohio"],
     "miamifl": ["miami", "miamiflorida", "miamihurricanes"],
     "miamiflorida": ["miami", "miamifl", "miamihurricanes"],
-    "olemiss": ["mississippi", "mississippistate"],
+    "miamiohio": ["miami", "miamioh", "miamiohioredhawks", "miami (oh)"],
+    "miami (oh)": ["miamiohio"],
+    "miami (oh) redhawks": ["miamiohio"],
+    "olemiss": ["mississippi", "mississippistate", "olemissrebels"],
     "mississippi": ["olemiss"],
     "ncstate": ["northcarolinastate"],
     "northcarolinastate": ["ncstate"],
-    "usc": ["southerncalifornia"],
+    "usc": ["southerncalifornia", "usctrojans"],
     "southerncalifornia": ["usc"],
+    "newmexico": ["newmexicolobos"],
+    "fiu": ["floridainternational", "floridainternationalpanthers", "floridaintl", "floridainternationaluniv"],
+    "utsa": ["texas-sanantonio", "utsaroadrunners", "utsa-roadrunners", "texassanantonio"],
+    "floridaintl": ["fiu"],
+    "floridainternationalpanthers": ["fiu"],
+    "utsaroadrunners": ["utsa"],
+    "minnesota": ["minnesotagoldengophers", "minnesota"],
+    "newmexico": ["newmexicolobos"],
+    "utsa": ["texas-sanantonio", "utsaroadrunners", "utsa"],
+    "dallas": ["dallascowboys"],
+    "unlv": ["nevada-lasvegas", "nevadalasvegas", "unlvrunninrebels"],
+    "utsa": ["texas-sanantonio", "utsaroadrunners"],
+    "ohio": ["ohiobobcats"],
+    "army": ["armywestpoint", "armyblackknights"],
+    "connecticut": ["uconn", "uconnhuskies", "connecticut huskies"],
+    "uconn": ["connecticut"],
+    "army": ["army black knights", "army"],
+    "byu": ["brighamyoung", "byucougars"],
+    "georgiatech": ["georgiatechyellowjackets"],
+    "fresnostate": ["calstfresno", "fresnostatebulldogs"],
     
-    
-    # NCAA FCS
+    # NCAA FCS (Consistent abbreviations)
     "northdakotastate": ["ndsu", "northdakotast"],
     "ndsu": ["northdakotastate"],
     "southdakotastate": ["sdsu", "southdakotast"],
     "sdsu": ["southdakotastate"],
     "montana": ["montanagrizzlies"],
-    "montanastate": ["montanast"],
+    "montanastate": ["montanast", "montanastbobcats"],
     "delaware": ["delawarebluehens"],
-    "villanova": ["villanova wildcats"],
     "illinoisstate": ["illstate", "ilstate", "illinoisst", "illinoisstredbirds"],
     "villanova": ["villanovawildcats", "nova"],
-    "montanastate": ["montanast", "montanastbobcats", "montanastatebobcats"],
-    "montana": ["montanagrizzlies", "griz", "univmontana"],
-
-    # EuroLeague / Int'l (Safe to keep for later)
-    "olympiacos": ["olympiakos", "olympiacospiraeus"],
-    "olympiakos": ["olympiacos", "olympiacospiraeus"],
-    "panathinaikos": ["panathinaikosathens", "panathinaikosbc"],
-    "realmadrid": ["realmadridbaloncesto"],
-    "barcelona": ["fcbarcelona", "barca", "barcelonabasket"],
-    "fenerbahce": ["fenerbahcebeko", "fenerbahceistanbul"],
-    "anadoluefes": ["efes", "anadolu", "anadoluefesistanbul"],
-    "baskonia": ["cazoobaskonia", "laboralkutxa"],
-    "virtusbologna": ["virtussegafredobologna"],
-    "monaco": ["asmonaco", "monacobasket"],
-    "maccabitelaviv": ["maccabiplaytikatelaviv", "maccabi"],
-    "partizan": ["partizanmozzartbet", "partizanbelgrade"],
-    "redstar": ["crvenazvezda", "kkcrvenazvezda", "redstarbelgrade"],
-    "crvenazvezda": ["redstar", "redstarbelgrade"],
-    "zalgiris": ["zalgiriskaunas"],
-    "alba": ["albaberlin"],
-    "bayern": ["bayernmunich", "fcbayernmunich"]
 }
