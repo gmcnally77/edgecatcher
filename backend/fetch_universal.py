@@ -54,8 +54,9 @@ if not os.path.exists(CACHE_DIR):
 # --- IN-PLAY SETTINGS (MINIMAL, LOCAL CONSTANTS) ---
 INPLAY_WINDOW_SECONDS = 4 * 3600     # treat matches as "in-play relevant" up to 4h after start
 PREMATCH_SPY_INTERVAL = 60           # seconds
-INPLAY_SPY_INTERVAL = 5              # seconds
-TTL_INPLAY_SECONDS = 5               # odds api cache TTL for in-play
+INPLAY_SPY_INTERVAL = 30             # seconds (Match loop to data frequency)
+TTL_INPLAY_SECONDS = 60              # odds api cache TTL (HARD LIMIT for 20k/mo budget)
+CALLS_THIS_SESSION = 0               # Global counter for accounting
 
 # --- SNAPSHOT SETTINGS (NEW) ---
 last_snapshot_time = 0
@@ -73,7 +74,8 @@ def fetch_cached_odds(sport_key, ttl_seconds, region='uk,eu,us'):
     now = time.time()
 
     # 1. Check Cache Age
-    if os.path.exists(cache_file) and ttl_seconds > TTL_INPLAY_SECONDS:
+    # FIX: Allow caching even for urgent/in-play requests (>= instead of >)
+    if os.path.exists(cache_file) and ttl_seconds >= TTL_INPLAY_SECONDS:
         file_age = now - os.path.getmtime(cache_file)
         if file_age < ttl_seconds:
             try:
@@ -94,7 +96,10 @@ def fetch_cached_odds(sport_key, ttl_seconds, region='uk,eu,us'):
     }
 
     urgency_label = "URGENT" if ttl_seconds < 300 else "NORMAL" if ttl_seconds < 3600 else "LAZY"
-    logger.info(f"🌍 CALLING API ({urgency_label}): {sport_key} (TTL: {int(ttl_seconds/60)}m)...")
+    
+    global CALLS_THIS_SESSION
+    CALLS_THIS_SESSION += 1
+    logger.info(f"🌍 CALLING API [#{CALLS_THIS_SESSION}] ({urgency_label}): {sport_key} (TTL: {ttl_seconds}s)...")
 
     try:
         response = requests.get(url, params=params, timeout=15)
@@ -149,15 +154,16 @@ def normalize_af(name):
     if not name: return ""
     name = str(name).lower()
     # Bridge common NCAA abbreviations to their full school names before stripping mascots
-    if "florida international" in name or name == "fiu" or "florida intl" in name: return "fiu"
-    if "texas san antonio" in name or name == "utsa": return "utsa"
+    # FIX: Broaden FIU/UTSA matching (allow substrings like "Florida Int" or "U.T.S.A")
+    if "florida international" in name or "fiu" in name or "florida int" in name: return "fiu"
+    if "texas san antonio" in name or "utsa" in name: return "utsa"
     if "brigham young" in name or name == "byu": return "byu"
     if "connecticut" in name or "uconn" in name: return "uconn"
     
     garbage = [
         "football team", "university", "univ.", "univ", " the ", " at ",
         "hilltoppers", "golden eagles", "hurricanes", "commanders", "vikings",
-        "lions", "cowboys", "giants", "jets", "wildcats", "redbirds", "bobcats",
+        "lions", "cowboys", "wildcats", "redbirds", "bobcats",
         "panthers", "roadrunners", "bulldogs", "lobos", "cougars",
         "black knights", "huskies", "redhawks"
     ]
@@ -225,9 +231,14 @@ def run_spy():
         if sport_name not in sport_schedules:
             sport_schedules[sport_name] = []
         if start_dt:
-            sport_schedules[sport_name].append(start_dt)
-
+            # Store metadata to allow granular filtering later
+            sport_schedules[sport_name].append({
+                'dt': start_dt,
+                'event': str(row.get('event_name') or "").upper(),
+                'comp': str(row.get('competition') or "").upper()
+            })
         is_af = sport_name in ['NFL', 'NCAAF', 'American Football', 'NCAA FCS']
+
         norm_func = normalize_af if is_af else normalize
 
         active_rows.append({
@@ -264,8 +275,24 @@ def run_spy():
 
     for sport in SPORTS_CONFIG:
         # --- Dynamic TTL Logic (patched for in-play) ---
-        relevant_starts = sport_schedules.get(sport['name'], [])
+        raw_schedule = sport_schedules.get(sport['name'], [])
         min_seconds_away = 999999
+
+        # Filter: Only trigger urgency if the LIVE game matches this Config's scope
+        relevant_starts = []
+        required_query = str(sport.get('text_query', '')).upper()
+        
+        for item in raw_schedule:
+            # Prevent FCS games from triggering the expensive NFL Pro API
+            if "NFL" in required_query and "NCAA" in item['comp']: 
+                continue
+            if "NFL" in required_query and "FCS" in item['comp']:
+                continue
+            # Prevent NFL games from triggering the FCS API
+            if "FCS" in required_query and "FCS" not in item['comp']:
+                continue
+
+            relevant_starts.append(item['dt'])
 
         if relevant_starts:
             deltas = []
@@ -285,13 +312,15 @@ def run_spy():
                 min_seconds_away = min(deltas)
 
         if min_seconds_away == 0:
-            ttl = TTL_INPLAY_SECONDS
-        elif min_seconds_away < 10800:
-            ttl = 120
-        elif min_seconds_away < 43200:
-            ttl = 900
-        else:
-            ttl = 3600
+            ttl = TTL_INPLAY_SECONDS      # Live (60s)
+        elif min_seconds_away < 3600:     # < 1 Hour (Golden Hour)
+            ttl = 120                     # 2 Minutes - Aggressive for team news
+        elif min_seconds_away < 10800:    # 1 - 3 Hours
+            ttl = 600                     # 10 Minutes - Relaxed
+        elif min_seconds_away < 43200:    # 3 - 12 Hours
+            ttl = 1800                    # 30 Minutes - Maintenance
+        else:                             # > 12 Hours
+            ttl = 3600                    # 60 Minutes - Deep Sleep
 
         data = fetch_cached_odds(sport['odds_api_key'], ttl_seconds=ttl)
 
@@ -372,8 +401,9 @@ def run_spy():
                         continue
 
                     # 2. Direct & Fuzzy Runner Match
-                    # Priority: Exact match of normalized strings, then substring
+                    # Priority: Exact match, then Alias Map, then substring
                     runner_match = (norm_name == row['norm_runner']) or \
+                                   check_match(norm_name, row['norm_runner']) or \
                                    (norm_name in row['norm_runner'] or row['norm_runner'] in norm_name)
                     
                     is_match = False
