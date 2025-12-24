@@ -1,8 +1,8 @@
 'use client';
 import { useEffect, useState, useCallback } from 'react';
 import { supabase } from '../utils/supabase';
-import { RefreshCw, TrendingUp, Clock, Radio, Lock, Unlock, Swords, Trophy, Dribbble, AlertCircle } from 'lucide-react';
-import SteamersPanel from '@/components/SteamersPanel'; 
+import { RefreshCw, TrendingUp, Clock, Radio, Lock, Unlock, Swords, Trophy, Dribbble, AlertCircle, Copy, Check } from 'lucide-react';
+import SteamersPanel from '@/components/SteamersPanel';
 
 // --- CONFIG ---
 const STEAMER_TEST_MODE = false;
@@ -123,6 +123,7 @@ export default function Home() {
   // PAYWALL STATE
   const [isPaid, setIsPaid] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [copied, setCopied] = useState(false);
   
   useEffect(() => {
     // Check local storage on mount
@@ -131,13 +132,22 @@ export default function Home() {
   }, []);
 
   const handleUnlock = () => {
+    console.info("paywall_open");
     setShowPaymentModal(true);
   };
 
   const handleConfirmPayment = () => {
+    console.info("unlock_clicked");
     localStorage.setItem('paid', 'true');
     setIsPaid(true);
     setShowPaymentModal(false);
+  };
+
+  const handleCopyLink = () => {
+    navigator.clipboard.writeText("https://revolut.me/gerardq0w5");
+    setCopied(true);
+    console.info("revolut_copy");
+    setTimeout(() => setCopied(false), 2000);
   };
 
   const handleResetPaywall = () => {
@@ -527,17 +537,36 @@ export default function Home() {
                 </div>
 
                 <div className="bg-[#0B1120] p-4 rounded-lg text-sm text-slate-300 space-y-3 border border-slate-800">
-                    <p className="leading-relaxed">
-                        <span className="font-bold text-white">1) Pay £20 on Revolut:</span><br/> 
-                        <a href="https://revolut.me/gerardq0w5" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300 hover:underline break-all">
-                            revolut.me/gerardq0w5
-                        </a>
-                    </p>
-                    <p className="leading-relaxed">
-                        <span className="font-bold text-white">2) Then DM @NBA_steamers with:</span>
+                    <div className="leading-relaxed">
+                        <span className="font-bold text-white block mb-1">1) Pay £20 on Revolut:</span>
+                        <div className="flex items-center gap-2 flex-wrap">
+                            <a href="https://revolut.me/gerardq0w5" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300 hover:underline break-all font-mono">
+                                revolut.me/gerardq0w5
+                            </a>
+                            <button 
+                                onClick={handleCopyLink}
+                                className="bg-slate-700 hover:bg-slate-600 text-white text-[10px] font-bold px-2 py-1 rounded flex items-center gap-1 transition-all min-w-[60px] justify-center"
+                            >
+                                {copied ? <Check size={10} /> : <Copy size={10} />}
+                                {copied ? "Copied" : "Copy"}
+                            </button>
+                        </div>
+                    </div>
+                    <div className="leading-relaxed">
+                        <span className="font-bold text-white block">2) Then DM @NBA_steamers with:</span>
                         <span className="block text-slate-400 pl-3 mt-1 text-xs">• your email</span>
                         <span className="block text-slate-400 pl-3 text-xs">• a screenshot of payment</span>
-                    </p>
+                        
+                        <a 
+                            href="https://t.me/NBA_steamers" 
+                            target="_blank" 
+                            rel="noreferrer"
+                            onClick={() => console.info("telegram_click")}
+                            className="mt-3 flex items-center justify-center w-full bg-[#229ED9] hover:bg-[#1f8rbc] text-white font-bold py-3 rounded-lg shadow-md transition-all text-xs"
+                        >
+                            DM on Telegram
+                        </a>
+                    </div>
                     <p className="text-[10px] text-slate-500 italic pt-1 border-t border-slate-800/50">
                         Access is granted manually.
                     </p>
