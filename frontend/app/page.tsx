@@ -325,10 +325,12 @@ export default function Home() {
                                 </div>
                             </div>
 
-                            <div className={`divide-y divide-slate-800 ${isSuspended ? 'opacity-50 pointer-events-none' : ''}`}>
+                            {/* EVENT SCROLL CONTAINER: Syncs scrolling for all runners */}
+                            <div className={`divide-y divide-slate-800 overflow-x-auto no-scrollbar ${isSuspended ? 'opacity-50 pointer-events-none' : ''}`}>
                                 {event.selections?.map((runner: any) => (
-                                    <div key={runner.id} className="flex items-center px-4 py-3 gap-4 hover:bg-slate-800/30 transition-colors">
-                                        <div className="flex-1 min-w-[120px]">
+                                    <div key={runner.id} className="flex items-center px-4 py-3 gap-4 hover:bg-slate-800/30 transition-colors min-w-max">
+                                        {/* STICKY NAME COLUMN */}
+                                        <div className="flex-1 min-w-[120px] sticky left-0 z-10 bg-[#161F32] border-r border-slate-800/50 pr-4">
                                             <div className="flex items-center gap-2">
                                                 <span className="text-white font-medium text-lg block leading-tight">
                                                     {runner.name}
@@ -407,8 +409,9 @@ export default function Home() {
                                         </div>
 
                                         {/* PRICE SECTION: Paywall Wrapper */}
-                                        <div className="relative w-[58%] md:w-auto flex-shrink-0">
-                                            <div className={`flex items-center gap-2 overflow-x-auto no-scrollbar mask-gradient ${isPaywalled ? 'blur-sm select-none opacity-40 pointer-events-none' : ''}`}>
+                                        <div className="relative">
+                                            {/* SCROLL REMOVED: Relies on parent container for sync */}
+                                            <div className={`flex items-center gap-2 ${isPaywalled ? 'blur-sm select-none opacity-40 pointer-events-none' : ''}`}>
                                                 <div className="flex gap-1 flex-shrink-0">
                                                     <div className="w-16 py-2 rounded-lg text-center bg-[#0B1120] border border-blue-500/30 flex flex-col justify-center h-[52px]">
                                                     <span className="text-[9px] text-blue-500 font-bold uppercase mb-0.5">Back</span>
