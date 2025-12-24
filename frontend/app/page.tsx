@@ -328,9 +328,9 @@ export default function Home() {
                             {/* EVENT SCROLL CONTAINER: Syncs scrolling for all runners */}
                             <div className={`divide-y divide-slate-800 overflow-x-auto no-scrollbar ${isSuspended ? 'opacity-50 pointer-events-none' : ''}`}>
                                 {event.selections?.map((runner: any) => (
-                                    <div key={runner.id} className="flex items-center px-4 py-3 gap-4 hover:bg-slate-800/30 transition-colors min-w-max">
+                                    <div key={runner.id} className="flex flex-col md:flex-row md:items-center px-4 py-3 gap-3 md:gap-4 hover:bg-slate-800/30 transition-colors w-full md:min-w-max">
                                         {/* STICKY NAME COLUMN */}
-                                        <div className="flex-1 min-w-[120px] sticky left-0 z-10 bg-[#161F32] border-r border-slate-800/50 pr-4">
+                                        <div className="w-full md:w-auto md:flex-1 md:min-w-[120px] md:sticky md:left-0 relative z-0 md:z-10 bg-[#161F32] border-b md:border-b-0 md:border-r border-slate-800/50 pb-2 md:pb-0 pr-0 md:pr-4">
                                             <div className="flex items-center gap-2">
                                                 <span className="text-white font-medium text-lg block leading-tight">
                                                     {runner.name}
@@ -409,41 +409,41 @@ export default function Home() {
                                         </div>
 
                                         {/* PRICE SECTION: Paywall Wrapper */}
-                                        <div className="relative">
+                                        <div className="relative w-full md:w-auto">
                                             {/* SCROLL REMOVED: Relies on parent container for sync */}
-                                            <div className={`flex items-center gap-2 ${isPaywalled ? 'blur-sm select-none opacity-40 pointer-events-none' : ''}`}>
-                                                <div className="flex gap-1 flex-shrink-0">
-                                                    <div className="w-16 py-2 rounded-lg text-center bg-[#0B1120] border border-blue-500/30 flex flex-col justify-center h-[52px]">
+                                            <div className={`flex flex-wrap md:flex-nowrap md:items-center gap-2 ${isPaywalled ? 'blur-sm select-none opacity-40 pointer-events-none' : ''}`}>
+                                                <div className="flex gap-2 w-full md:w-auto md:gap-1 flex-shrink-0">
+                                                    <div className="flex-1 md:w-16 py-2 rounded-lg text-center bg-[#0B1120] border border-blue-500/30 flex flex-col justify-center h-[52px]">
                                                     <span className="text-[9px] text-blue-500 font-bold uppercase mb-0.5">Back</span>
                                                     <span className="text-lg font-mono font-bold text-blue-400 leading-none">
                                                         {formatPrice(runner.exchange.back)}
                                                     </span>
                                                 </div>
-                                                <div className="w-16 py-2 rounded-lg text-center bg-[#0B1120] border border-pink-500/30 flex flex-col justify-center h-[52px]">
+                                                <div className="flex-1 md:w-16 py-2 rounded-lg text-center bg-[#0B1120] border border-pink-500/30 flex flex-col justify-center h-[52px]">
                                                     <span className="text-[9px] text-pink-500 font-bold uppercase mb-0.5">Lay</span>
                                                     <span className="text-lg font-mono font-bold text-pink-400 leading-none">
                                                         {formatPrice(runner.exchange.lay)}
                                                     </span>
                                                 </div>
                                             </div>
-                                            <div className="w-px h-8 bg-slate-700 mx-1 flex-shrink-0"></div>
+                                            <div className="hidden md:block w-px h-8 bg-slate-700 mx-1 flex-shrink-0"></div>
                                             
                                             {/* PINNACLE */}
-                                            <div className="w-16 py-2 rounded-lg text-center bg-[#ff7b00] border border-[#e66e00] flex flex-col justify-center h-[52px] flex-shrink-0">
+                                            <div className="flex-1 md:w-16 py-2 rounded-lg text-center bg-[#ff7b00] border border-[#e66e00] flex flex-col justify-center h-[52px] flex-shrink-0">
                                                 <span className="text-[9px] text-orange-900 font-bold uppercase mb-0.5">Pin</span>
                                                 <span className="text-lg font-mono font-bold text-white leading-none">
                                                     {formatPrice(runner.bookmakers.pinnacle)}
                                                 </span>
                                             </div>
                                             {/* LADBROKES */}
-                                            <div className="w-16 py-2 rounded-lg text-center bg-[#4a4a4a] border border-[#3a3a3a] flex flex-col justify-center h-[52px] flex-shrink-0">
+                                            <div className="flex-1 md:w-16 py-2 rounded-lg text-center bg-[#4a4a4a] border border-[#3a3a3a] flex flex-col justify-center h-[52px] flex-shrink-0">
                                             <span className="text-[9px] text-gray-200 font-bold uppercase mb-0.5">Ladbrokes</span>
                                             <span className="text-lg font-mono font-bold text-white leading-none">
                                                 {formatPrice(runner.bookmakers.ladbrokes)}
                                             </span>
                                             </div>
                                             {/* PADDY */}
-                                            <div className="w-16 py-2 rounded-lg text-center bg-white border-2 border-[#206c48] flex flex-col justify-center h-[52px] flex-shrink-0">
+                                            <div className="flex-1 md:w-16 py-2 rounded-lg text-center bg-white border-2 border-[#206c48] flex flex-col justify-center h-[52px] flex-shrink-0">
                                                 <span className="text-[9px] text-[#206c48] font-bold uppercase mb-0.5">PP</span>
                                                 <span className="text-lg font-mono font-bold text-[#206c48] leading-none">
                                                     {formatPrice(runner.bookmakers.paddypower)}
