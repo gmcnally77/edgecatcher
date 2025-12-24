@@ -575,10 +575,13 @@ def fetch_betfair():
     if not trading.session_token:
         try:
             trading.login()
-            logger.info("Login Successful")
-        except:
+            logger.info("✅ Login Successful")
+        except Exception as e:
+            logger.error(f"❌ LOGIN FAILED: {e}")
+            logger.warning("⏳ Pausing for 2 mins to avoid account lock...")
+            time.sleep(120)  # PENALTY BOX: Stop spamming login!
             return
-
+        
     update_time = datetime.now(timezone.utc).isoformat()
     best_price_map = {}
 
@@ -610,7 +613,13 @@ def fetch_betfair():
                 market_projection=['MARKET_START_TIME', 'EVENT', 'COMPETITION', 'RUNNER_METADATA'],
                 sort='FIRST_TO_START'
             )
+            
+            # DIAGNOSTIC LOG: Check what we actually found
+            logger.info(f"🔎 SEARCH {sport_conf['name']}: Found {len(markets)} markets")
+            
             if not markets:
+                logger.warning(f"⚠️ No markets found for {sport_conf['name']} (Check Query/Filter)")
+                continue
                 continue
 
             price_projection = filters.price_projection(price_data=['EX_BEST_OFFERS', 'EX_TRADED'], virtualise=True)
@@ -690,8 +699,19 @@ def fetch_betfair():
 if __name__ == "__main__":
     logger.info("--- STARTING UNIVERSAL ENGINE (PROXIMITY OPTIMIZED + TIMEOUT) ---")
     run_spy()
+    
+    last_keep_alive = time.time()
 
     while True:
+        # SESSION GUARD: Refresh hourly (Running every 6s = Auth Ban)
+        if trading.session_token and (time.time() - last_keep_alive > 3600):
+            try:
+                trading.keep_alive()
+                last_keep_alive = time.time()
+                logger.info("🔄 Session Keep-Alive Refreshed")
+            except:
+                trading.login()
+                
         fetch_betfair()
 
         # Dynamic spy interval: fast during in-play, slow otherwise
@@ -701,4 +721,5 @@ if __name__ == "__main__":
             run_spy()
             last_spy_run = time.time()
 
-        time.sleep(1)
+        # RATE LIMIT GUARD: Do not run faster than 1 cycle per 6s (approx 600-1200 calls/hr)
+        time.sleep(6)
