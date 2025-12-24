@@ -257,7 +257,7 @@ export default function Home() {
             {/* SUB-LABEL */}
             <div className="mb-4 -mt-2">
                 <p className="text-[10px] md:text-xs text-slate-400 font-medium tracking-wide">
-                    Find bookmaker prices beating the exchange before tip-off.
+                    Spot value where bookmakers are mispriced vs the exchange.
                 </p>
             </div>
 
