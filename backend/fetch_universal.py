@@ -349,7 +349,7 @@ def run_spy():
         elif min_seconds_away < 43200:    # 3 - 12 Hours
             ttl = 1800                    # 30 Minutes - Maintenance
         else:                             # > 12 Hours
-            ttl = 3600                    # 60 Minutes - Deep Sleep
+            ttl = 1800                    # 30 Minutes - Deep Sleep (Accelerated)
 
         data = fetch_cached_odds(sport['odds_api_key'], ttl_seconds=ttl)
 
