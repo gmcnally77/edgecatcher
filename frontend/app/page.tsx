@@ -541,12 +541,12 @@ export default function Home() {
                 
                 <div className="text-center space-y-1">
                     <h3 className="text-white font-bold text-lg leading-tight">Unlock Today&apos;s NBA Steamers (Daily)</h3>
-                    <p className="text-blue-400 font-mono font-bold text-lg">£20 / week</p>
+                    <p className="text-blue-400 font-mono font-bold text-lg">£5 / week</p>
                 </div>
 
                 <div className="bg-[#0B1120] p-4 rounded-lg text-sm text-slate-300 space-y-3 border border-slate-800">
                     <div className="leading-relaxed">
-                        <span className="font-bold text-white block mb-1">1) Pay £20 on Revolut:</span>
+                        <span className="font-bold text-white block mb-1">1) Pay £5 on Revolut:</span>
                         <div className="flex items-center gap-2 flex-wrap">
                             <a href="https://revolut.me/gerardq0w5" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300 hover:underline break-all font-mono">
                                 revolut.me/gerardq0w5
