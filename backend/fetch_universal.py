@@ -11,8 +11,6 @@ import logging
 from datetime import datetime, timezone, timedelta
 from supabase import create_client, Client
 
-logger.info("🚀 AUTOMATION VERIFIED: The pipeline is working!") 
-
 # --- LOGGING SETUP ---
 # Controls detailed per-item logging (default: False)
 DEBUG_MODE = os.getenv('APP_DEBUG', '0') == '1'
@@ -714,6 +712,7 @@ def fetch_betfair():
             logger.error(f"Database Error: {e}")
 
 if __name__ == "__main__":
+    logger.info("🚀 AUTOMATION VERIFIED: The pipeline is working!") 
     logger.info("--- STARTING UNIVERSAL ENGINE (PROXIMITY OPTIMIZED + TIMEOUT) ---")
     run_spy()
     
