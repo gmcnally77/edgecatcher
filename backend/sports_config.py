@@ -117,6 +117,17 @@ ALIAS_MAP = {
     "delaware": ["delawarebluehens"],
     "illinoisstate": ["illstate", "ilstate", "illinoisst", "illinoisstredbirds"],
     "villanova": ["villanovawildcats", "nova"],
+    
+    # --- NBA ---
+    "losangeles": ["lalakers", "laclippers", "la", "lakers", "clippers"],
+    "lalakers": ["losangeleslakers", "losangeles", "lakers"],
+    "laclippers": ["losangelesclippers", "losangeles", "clippers"],
+    "newyork": ["nyknicks", "ny", "knicks"],
+    "nyknicks": ["newyorkknicks", "newyork", "knicks"],
+    "goldenstate": ["gswarriors", "gs", "warriors"],
+    "gswarriors": ["goldenstatewarriors", "goldenstate"],
+    "sanantonio": ["sanantoniospurs", "spurs"],
+    "sanantoniospurs": ["sanantonio"],
 }
 
 # --- SCOPE GUARD (NEW) ---

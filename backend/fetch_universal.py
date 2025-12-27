@@ -59,8 +59,8 @@ if not os.path.exists(CACHE_DIR):
 
 # --- IN-PLAY SETTINGS (MINIMAL, LOCAL CONSTANTS) ---
 INPLAY_WINDOW_SECONDS = 4 * 3600     # treat matches as "in-play relevant" up to 4h after start
-PREMATCH_SPY_INTERVAL = 60           # seconds
-INPLAY_SPY_INTERVAL = 30             # seconds (Match loop to data frequency)
+PREMATCH_SPY_INTERVAL = 15           # seconds (Check TTL frequently)
+INPLAY_SPY_INTERVAL = 15             # seconds
 TTL_INPLAY_SECONDS = 60              # odds api cache TTL (HARD LIMIT for 20k/mo budget)
 CALLS_THIS_SESSION = 0               # Global counter for accounting
 
@@ -340,18 +340,37 @@ def run_spy():
         if min_seconds_away == 999999 and any(r['sport'] == sport['name'] for r in active_rows):
             min_seconds_away = 7200
 
+        # 🧠 ECONOMY BUDGETING (Target: ~288 calls/day per sport)
+        # Allows for 2-3 sports on a 20k/month plan.
         if min_seconds_away == 0:
-            ttl = TTL_INPLAY_SECONDS      # Live (60s)
-        elif min_seconds_away < 3600:     # < 1 Hour (Golden Hour)
-            ttl = 120                     # 2 Minutes - Aggressive for team news
-        else:                             # > 1 Hour (All Pre-Match)
-            ttl = 300                     # 5 Minutes - Maximum Fidelity
+            ttl = 60                      # Live: Standard
+        elif min_seconds_away < 86400:    # < 24 Hours (DAY OF GAME)
+            ttl = 300                     # ⚡ Economy: 5 mins (Balance fresh vs budget)
+        else:                             # > 24 Hours (FUTURE)
+            ttl = 3600                    # 🧊 Hibernate: 1 hour updates
+
+        # 🔍 DEBUG: Print exactly why we are sleeping
+        if min_seconds_away < 86400:
+             logger.info(f"[{sport['name']}] Active Cycle (Game in {min_seconds_away/3600:.1f}h) -> TTL: {ttl}s")
 
         data = fetch_cached_odds(sport['odds_api_key'], ttl_seconds=ttl)
 
         if isinstance(data, dict) and 'message' in data:
             logger.warning(f"API MESSAGE ({sport['name']}): {data['message']}")
             continue
+
+        # 📊 MONITORING: Check Data Age
+        cache_file = os.path.join(CACHE_DIR, f"{sport['odds_api_key']}.json")
+        data_age = time.time() - os.path.getmtime(cache_file) if os.path.exists(cache_file) else 0
+        
+        # Log based on budget zones
+        if min_seconds_away < 86400: # Day of Game
+            if data_age > 320: # Allow slight buffer over 300s
+                logger.warning(f"⚠️  STALE (ACTIVE): {sport['name']} is {data_age:.1f}s old (Target: 300s)")
+            else:
+                logger.info(f"✅ FRESH (ACTIVE): {sport['name']} is {data_age:.1f}s old")
+        else:
+            logger.info(f"💤 ECO MODE: {sport['name']} is {data_age:.0f}s old (TTL: {ttl}s)")
 
         strict_mode = sport.get('strict_mode', True)
         config_is_af = 'americanfootball' in sport['odds_api_key']
