@@ -15,18 +15,17 @@ jobs:
         username: ${{ secrets.DO_USER }}
         key: ${{ secrets.DO_SSH_KEY }}
         script: |
-          # 1. Go to your project folder (UPDATE THIS PATH)
-          cd /root/independence  # <--- CHECK THIS PATH ON YOUR SERVER
+          # 1. Go to the ACTUAL folder (Verified from your logs)
+          cd /opt/app
           
-          # 2. Pull latest code
+          # 2. Discard the manual nano edits we made so git doesn't crash
+          git reset --hard HEAD
+          
+          # 3. Pull latest code
           git pull origin main
           
-          # 3. Update dependencies (just in case)
-          # source venv/bin/activate  <--- UNCOMMENT IF USING VENV
-          # pip install -r requirements.txt
-          
           # 4. Restart the service
-          sudo systemctl restart odds-fetcher
+          systemctl restart odds-fetcher
           
           # 5. Verify it's up
-          sudo systemctl status odds-fetcher --no-pager
+          systemctl status odds-fetcher --no-pager
