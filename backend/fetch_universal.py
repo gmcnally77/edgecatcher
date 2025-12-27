@@ -8,6 +8,7 @@ import re
 import os
 import json
 import logging
+import telegram_alerts
 from datetime import datetime, timezone, timedelta
 from supabase import create_client, Client
 
@@ -735,6 +736,12 @@ if __name__ == "__main__":
         if time.time() - last_spy_run > spy_interval:
             run_spy()
             last_spy_run = time.time()
+
+        # --- INDEPENDENCE V4 ALERTS ---
+        try:
+            telegram_alerts.run_alert_cycle(supabase)
+        except Exception as e:
+            logger.error(f"Alert Cycle Failed: {e}")
 
         # RATE LIMIT GUARD: Do not run faster than 1 cycle per 6s (approx 600-1200 calls/hr)
         time.sleep(6)
