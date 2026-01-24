@@ -346,7 +346,7 @@ export default function Home() {
                     Pre-match only · Moneyline · Best bookmaker price vs exchange
                 </p>
                 <p className="text-[10px] text-slate-500">
-                    These are games where bookmakers are mispriced versus the exchange.
+                    Tracking prices that are arbs versus 100% price.
                     <span className="block sm:inline sm:ml-2 text-slate-600 italic">Updated continuously until the off.</span>
                 </p>
             </div>
