@@ -285,7 +285,8 @@ export default function Home() {
                             EdgeScanner
                         </span>
                         <div className="flex items-center gap-2 mt-0.5">
-                            <span className="text-[10px] uppercase font-bold text-blue-400 tracking-widest bg-blue-400/10 px-1.5 rounded">
+                            {/* GOLD PRO BADGE */}
+                            <span className="text-[10px] uppercase font-bold text-yellow-400 tracking-widest bg-yellow-400/10 px-1.5 rounded border border-yellow-400/20">
                                 PRO
                             </span>
                             {!isPaid && (
@@ -309,7 +310,7 @@ export default function Home() {
                                 : 'text-slate-500 hover:text-slate-300'
                             }`}
                         >
-                            <Radar size={12} className={viewMode === 'scanner' ? 'text-cyan-300' : ''} />
+                            <Radar size={12} className={viewMode === 'scanner' ? 'text-yellow-300' : ''} />
                             Scanner
                         </button>
                         <button 
