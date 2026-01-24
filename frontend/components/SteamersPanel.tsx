@@ -5,7 +5,7 @@ import { supabase } from '../utils/supabase';
 // --- CONFIGURATION ---
 const STEAM_WINDOW_MINUTES = 60;  // Look back 1 hour
 const MIN_VOLUME = 500;           // Ignore low liquidity markets
-const STEAM_THRESHOLD = 0.03;     // 3% move required to flag
+const STEAM_THRESHOLD = 0.0001;     // 3% move required to flag
 const DRIFT_THRESHOLD = 0.03;     // 3% move required to flag
 const MAX_SNAPSHOTS = 2000;       // Safety limit for DB fetch
 
