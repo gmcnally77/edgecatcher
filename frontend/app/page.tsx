@@ -434,8 +434,8 @@ export default function Home() {
                                 </div>
                             </div>
 
-                            {/* EVENT SCROLL CONTAINER: Syncs scrolling for all runners */}
-                            <div className={`divide-y divide-slate-800 overflow-x-auto no-scrollbar scrollbar-gutter-stable ${isSuspended ? 'opacity-50 pointer-events-none' : ''}`}>
+                            {/* EVENT CONTAINER: Clean grid flow, no forced overflow */}
+                            <div className={`divide-y divide-slate-800 ${isSuspended ? 'opacity-50 pointer-events-none' : ''}`}>
                                 {event.selections?.map((runner: any) => {
                                     const { back, lay } = runner.exchange;
                                     let selectionBorder = "border-transparent";
@@ -456,7 +456,7 @@ export default function Home() {
                                     }
 
                                     return (
-                                        <div key={runner.id} className={`flex flex-col md:flex-row md:items-center px-4 py-3 gap-3 md:gap-4 hover:bg-slate-800/30 transition-all w-full md:min-w-[600px] border-2 rounded-xl m-1 ${selectionBorder}`}>
+                                        <div key={runner.id} className={`flex flex-col md:flex-row md:items-center px-4 py-3 gap-3 md:gap-4 hover:bg-slate-800/30 transition-all w-full border-2 rounded-xl ${selectionBorder}`}>
 
                                         {/* STICKY NAME COLUMN */}
                                         <div className="w-full md:w-auto md:flex-1 md:min-w-[120px] md:sticky md:left-0 relative z-0 md:z-10 bg-[#161F32] border-b md:border-b-0 md:border-r border-slate-800/50 pb-2 md:pb-0 pr-0 md:pr-4">
