@@ -321,7 +321,7 @@ export default function Home() {
                     </div>
                     <div className="flex flex-col">
                         <span className="block text-lg font-bold text-white leading-none">
-                            NBA Pre-Match Steamers <span className="text-blue-500 text-xs ml-1 tracking-widest">(Daily)</span>
+                            Pre-Match Steamers <span className="text-blue-500 text-xs ml-1 tracking-widest">(Daily)</span>
                         </span>
                     </div>
                     {!isPaid && (
@@ -347,7 +347,7 @@ export default function Home() {
                 </p>
                 <p className="text-[10px] text-slate-500">
                     These are games where bookmakers are mispriced versus the exchange.
-                    <span className="block sm:inline sm:ml-2 text-slate-600 italic">Updated continuously until tip-off.</span>
+                    <span className="block sm:inline sm:ml-2 text-slate-600 italic">Updated continuously until the off.</span>
                 </p>
             </div>
 
