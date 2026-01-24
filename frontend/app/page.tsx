@@ -434,7 +434,90 @@ export default function Home() {
                                 </div>
                             </div>
 
-                            {/* PRICE SECTION: HYBRID STACK UI */}
+                            {/* EVENT SCROLL CONTAINER: Syncs scrolling for all runners */}
+                            <div className={`divide-y divide-slate-800 overflow-x-auto no-scrollbar scrollbar-gutter-stable ${isSuspended ? 'opacity-50 pointer-events-none' : ''}`}>
+                                {event.selections?.map((runner: any) => (
+                                    <div key={runner.id} className="flex flex-col md:flex-row md:items-center px-4 py-3 gap-3 md:gap-4 hover:bg-slate-800/30 transition-colors w-full md:min-w-[600px]">
+                                        {/* STICKY NAME COLUMN */}
+                                        <div className="w-full md:w-auto md:flex-1 md:min-w-[120px] md:sticky md:left-0 relative z-0 md:z-10 bg-[#161F32] border-b md:border-b-0 md:border-r border-slate-800/50 pb-2 md:pb-0 pr-0 md:pr-4">
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-white font-medium text-lg block leading-tight">
+                                                    {runner.name}
+                                                </span>
+                                                
+                                                {/* BADGE LOGIC */}
+                                                {(() => {
+                                                    const sigData = steamerSignals.get(runner.name);
+                                                    if (!sigData) return null;
+
+                                                    const now = Date.now();
+                                                    const start = new Date(event.start_time).getTime();
+                                                    const minsUntilStart = (start - now) / 60000;
+                                                    
+                                                    if (minsUntilStart < 10) return null;
+
+                                                    // ✅ TEST MODE: 0 Volume requirement
+                                                    const minVol = STEAMER_TEST_MODE ? 0 : 200;
+                                                    if ((event.volume || 0) < minVol) return null;
+
+                                                    const isSteam = sigData.label === 'STEAMER';
+                                                    const arrow = isSteam ? '↑' : '↓';
+                                                    const pct = Math.abs(sigData.pct * 100).toFixed(1);
+                                                    
+                                                    const baseStyle = "text-[9px] font-bold px-1.5 py-0.5 " +
+                                                                    "rounded border flex items-center gap-1";
+                                                    
+                                                    const colorStyle = isSteam
+                                                        ? "bg-blue-500/20 text-blue-300 border-blue-500/30"
+                                                        : "bg-pink-500/20 text-pink-300 border-pink-500/30";
+
+                                                    return (
+                                                        <span className={`${baseStyle} ${colorStyle}`}>
+                                                            <span>STEAM {arrow}</span>
+                                                            <span className="opacity-80">|</span>
+                                                            <span>{pct}%</span>
+                                                        </span>
+                                                    );
+                                                })()}
+                                            </div>
+
+                                            {/* VALUE CALC: Best Book vs Exchange Mid (Gated >5% Spread) */}
+                                            {(() => {
+                                                const { back, lay } = runner.exchange;
+                                                
+                                                // GATE 1: Strict Liquidity (Must have both Back & Lay)
+                                                if (!back || back <= 1.0 || !lay || lay <= 1.0) return null;
+
+                                                const mid = (back + lay) / 2;
+                                                const spreadPct = ((lay - back) / mid) * 100;
+
+                                                // GATE 2: Max 5% Spread Allowed
+                                                if (spreadPct > 5.0) return null;
+
+                                                const books = [
+                                                    { label: 'Pin', p: runner.bookmakers.pinnacle },
+                                                    { label: 'Lad', p: runner.bookmakers.ladbrokes },
+                                                    { label: 'PP', p: runner.bookmakers.paddypower }
+                                                ];
+                                                
+                                                // Find best book (Max price > 1.0)
+                                                const best = books.reduce((acc, curr) => (curr.p > 1.0 && curr.p > acc.p) ? curr : acc, { label: '', p: 0 });
+                                                
+                                                if (best.p <= 1.0) return null;
+
+                                                const diff = ((best.p / mid) - 1) * 100;
+                                                const sign = diff > 0 ? '+' : '';
+                                                const diffColor = diff > 0 ? 'text-green-400' : 'text-slate-500';
+
+                                                return (
+                                                    <div className="text-[10px] text-slate-500 mt-1 font-mono leading-none">
+                                                        Best: <span className="text-slate-300 font-bold">{best.label} {best.p.toFixed(2)}</span> <span className={diffColor}>({sign}{diff.toFixed(1)}% vs mid)</span>
+                                                    </div>
+                                                );
+                                            })()}
+                                        </div>
+
+                                            {/* PRICE SECTION: HYBRID STACK UI */}
                                             <div className="w-full md:w-auto mt-2 md:mt-0">
                                                 <div className={`flex items-center gap-1.5 md:gap-3 ${isPaywalled ? 'blur-sm select-none opacity-40 pointer-events-none' : ''}`}>
                                                     
@@ -533,6 +616,9 @@ export default function Home() {
                                                     </div>
                                                 )}
                                             </div>
+                                    </div>
+                                ))}
+                            </div>
                         </div>
                         </div>
                     )})}
