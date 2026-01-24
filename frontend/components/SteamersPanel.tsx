@@ -25,15 +25,15 @@ export default function SteamersPanel({ activeSport, onSteamersChange }: any) {
 
     Object.keys(groups).forEach(name => {
       const history = groups[name];
-      if (history.length < 2) return;
+      if (history.length < 2) return; // Need at least 2 data points
 
       const current = history[0].mid_price;
       const initial = history[history.length - 1].mid_price;
       const delta = ((initial - current) / initial) * 100;
 
-      // ✅ ADJUSTED THRESHOLD: 1.0% (Was 1.5%)
-      // This is more sensitive for pre-match markets
-      if (Math.abs(delta) >= 1.0) {
+      // 🔥 HYPER SENSITIVE MODE: 0.1% Threshold
+      // Catches basically any movement at all
+      if (Math.abs(delta) >= 0.1) {
         signals.set(name, {
           label: delta > 0 ? 'STEAMER' : 'DRIFTER',
           pct: Math.abs(delta) / 100
@@ -46,9 +46,9 @@ export default function SteamersPanel({ activeSport, onSteamersChange }: any) {
 
   useEffect(() => {
     fetchMovement();
-    const interval = setInterval(fetchMovement, 15000);
+    const interval = setInterval(fetchMovement, 10000); // Poll faster (10s)
     return () => clearInterval(interval);
   }, [fetchMovement]);
 
-  return null; // Silent logic provider
+  return null;
 }

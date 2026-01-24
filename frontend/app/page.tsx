@@ -9,7 +9,7 @@ import {
 import SteamersPanel from '@/components/SteamersPanel';
 
 // --- CONFIG ---
-const STEAMER_TEST_MODE = false;
+const STEAMER_TEST_MODE = true;
 // --------------
 
 const SPORTS = [
