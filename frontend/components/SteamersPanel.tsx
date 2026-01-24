@@ -27,7 +27,6 @@ export default function SteamersPanel({ activeSport, onSteamersChange }: any) {
 
     const timeHorizon = new Date(Date.now() - LOOKBACK_MINUTES * 60 * 1000).toISOString();
     
-    // Fetch MORE rows to ensure we have history for all runners
     const { data, error } = await supabase
       .from('market_snapshots')
       .select('runner_name, mid_price, volume, ts')
@@ -56,7 +55,6 @@ export default function SteamersPanel({ activeSport, onSteamersChange }: any) {
       const current = history[0]; 
       if (current.volume < MIN_VOLUME) return;
 
-      // High Water Mark Logic
       let maxPrice = 0;
       let maxPriceTs = '';
       
@@ -80,7 +78,7 @@ export default function SteamersPanel({ activeSport, onSteamersChange }: any) {
           startPrice: maxPrice,
           endPrice: current.mid_price,
           vol: current.volume,
-          timeDesc: `${timeDiff}m ago`
+          timeDesc: `${timeDiff}m`
         });
         eventSet.add(name);
       } 
