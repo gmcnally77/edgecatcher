@@ -436,8 +436,28 @@ export default function Home() {
 
                             {/* EVENT SCROLL CONTAINER: Syncs scrolling for all runners */}
                             <div className={`divide-y divide-slate-800 overflow-x-auto no-scrollbar scrollbar-gutter-stable ${isSuspended ? 'opacity-50 pointer-events-none' : ''}`}>
-                                {event.selections?.map((runner: any) => (
-                                    <div key={runner.id} className="flex flex-col md:flex-row md:items-center px-4 py-3 gap-3 md:gap-4 hover:bg-slate-800/30 transition-colors w-full md:min-w-[600px]">
+                                {event.selections?.map((runner: any) => {
+                                    const { back, lay } = runner.exchange;
+                                    let selectionBorder = "border-transparent";
+                                    
+                                    if (back > 1.0 && lay > 1.0) {
+                                        const mid = (back + lay) / 2;
+                                        const bestPrice = Math.max(
+                                            runner.bookmakers.pinnacle || 0,
+                                            runner.bookmakers.ladbrokes || 0,
+                                            runner.bookmakers.paddypower || 0
+                                        );
+                                        
+                                        if (bestPrice > 1.0) {
+                                            const diff = ((bestPrice / mid) - 1) * 100;
+                                            if (diff > 0.01) selectionBorder = "border-emerald-500 shadow-[0_0_15px_rgba(16,185,129,0.2)]";
+                                            else if (diff >= -0.01) selectionBorder = "border-amber-500 shadow-[0_0_15px_rgba(245,158,11,0.2)]";
+                                        }
+                                    }
+
+                                    return (
+                                        <div key={runner.id} className={`flex flex-col md:flex-row md:items-center px-4 py-3 gap-3 md:gap-4 hover:bg-slate-800/30 transition-all w-full md:min-w-[600px] border-2 rounded-xl m-1 ${selectionBorder}`}>
+
                                         {/* STICKY NAME COLUMN */}
                                         <div className="w-full md:w-auto md:flex-1 md:min-w-[120px] md:sticky md:left-0 relative z-0 md:z-10 bg-[#161F32] border-b md:border-b-0 md:border-r border-slate-800/50 pb-2 md:pb-0 pr-0 md:pr-4">
                                             <div className="flex items-center gap-2">
@@ -603,7 +623,8 @@ export default function Home() {
                                                 )}
                                             </div>
                                     </div>
-                                ))}
+                                    );
+                                })}
                             </div>
                         </div>
                         </div>
