@@ -9,58 +9,72 @@ export default function SteamersPanel({ activeSport, onSteamersChange }: any) {
   const fetchMovement = useCallback(async () => {
     // 1. Fetch Snapshots (Last 60 mins)
     const hourAgo = new Date(Date.now() - 3600000).toISOString();
-    const { data, error } = await supabase
+    
+    // FETCH 1: Try to get history
+    let { data, error } = await supabase
       .from('market_snapshots')
       .select('*')
       .eq('sport', activeSport)
       .gt('ts', hourAgo)
       .order('ts', { ascending: false })
-      .limit(500); // Increased limit to ensure we get enough candidates
-
-    if (error || !data || data.length === 0) return;
+      .limit(500);
 
     const signals = new Map();
     const groups: Record<string, any[]> = {};
-    const allRunners: string[] = [];
+    let allRunners: string[] = [];
 
-    // 2. Group by Runner
-    data.forEach(d => {
-      if (!groups[d.runner_name]) {
-        groups[d.runner_name] = [];
-        allRunners.push(d.runner_name);
-      }
-      groups[d.runner_name].push(d);
-    });
-
-    // 3. Real Calculation Logic
-    Object.keys(groups).forEach(name => {
-      const history = groups[name];
-      if (history.length < 2) return;
-
-      const current = history[0].mid_price;
-      const initial = history[history.length - 1].mid_price;
-      const delta = ((initial - current) / initial) * 100;
-
-      // 0.1% Threshold (Real Steam)
-      if (Math.abs(delta) >= 0.1) {
-        signals.set(name, {
-          label: delta > 0 ? 'STEAMER' : 'DRIFTER',
-          pct: Math.abs(delta) / 100
+    // 2. Process History (If exists)
+    if (data && data.length > 0) {
+        data.forEach(d => {
+            if (!groups[d.runner_name]) {
+                groups[d.runner_name] = [];
+                allRunners.push(d.runner_name);
+            }
+            groups[d.runner_name].push(d);
         });
-      }
-    });
 
-    // 4. 🧪 SIMULATION INJECTION (Only if enabled)
-    // This forces badges to show up for testing purposes
+        // Real Calculation Logic
+        Object.keys(groups).forEach(name => {
+            const history = groups[name];
+            if (history.length < 2) return;
+
+            const current = history[0].mid_price;
+            const initial = history[history.length - 1].mid_price;
+            const delta = ((initial - current) / initial) * 100;
+
+            if (Math.abs(delta) >= 0.1) {
+                signals.set(name, {
+                    label: delta > 0 ? 'STEAMER' : 'DRIFTER',
+                    pct: Math.abs(delta) / 100
+                });
+            }
+        });
+    }
+
+    // 3. 🛡️ FALLBACK: If history is empty, fetch LIVE runners for Simulation
+    // This ensures we have names to fake signals for, even if snapshots are empty.
+    if (SIMULATION_MODE && allRunners.length === 0) {
+        const { data: liveData } = await supabase
+            .from('market_feed')
+            .select('runner_name')
+            .eq('sport', activeSport)
+            .limit(50);
+            
+        if (liveData) {
+            allRunners = liveData.map(r => r.runner_name);
+        }
+    }
+
+    // 4. 🧪 SIMULATION INJECTION
     if (SIMULATION_MODE && allRunners.length > 0) {
-      // Pick 3 random runners to fake steam for
+      // Pick 3-5 random runners to fake steam for
       const shuffled = allRunners.sort(() => 0.5 - Math.random());
-      const selected = shuffled.slice(0, 4); 
+      const selected = shuffled.slice(0, 5); 
 
       selected.forEach((name, index) => {
         // Alternate between Steam (Green) and Drift (Red)
         const isSteam = index % 2 === 0; 
-        const fakePct = (Math.random() * 5 + 1.5).toFixed(1); // Random 1.5% - 6.5%
+        const fakePct = (Math.random() * 5 + 1.5).toFixed(1); 
 
         signals.set(name, {
           label: isSteam ? 'STEAMER' : 'DRIFTER',
@@ -75,7 +89,7 @@ export default function SteamersPanel({ activeSport, onSteamersChange }: any) {
 
   useEffect(() => {
     fetchMovement();
-    const interval = setInterval(fetchMovement, 5000); // Update every 5s for snappy testing
+    const interval = setInterval(fetchMovement, 5000); // Fast 5s updates
     return () => clearInterval(interval);
   }, [fetchMovement]);
 
