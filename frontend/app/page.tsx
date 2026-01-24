@@ -4,7 +4,7 @@ import { supabase } from '../utils/supabase';
 import { 
   RefreshCw, TrendingUp, Clock, Radio, Lock, Unlock, 
   Swords, Trophy, Dribbble, AlertCircle, Copy, Check, Search,
-  LayoutGrid, LayoutList 
+  Zap 
 } from 'lucide-react';
 import SteamersPanel from '@/components/SteamersPanel';
 
@@ -272,48 +272,68 @@ export default function Home() {
       
       {/* HEADER SECTION */}
       <div className="sticky top-0 z-50 bg-[#0B1120]/95 backdrop-blur-md border-b border-slate-800 shadow-xl">
-        <div className="max-w-7xl mx-auto px-4 pt-4">
-            <div className="flex justify-between items-center mb-4">
-                <div className="flex items-center gap-2">
-                    <div className="bg-blue-600/20 p-2 rounded-lg border border-blue-500/20">
-                        <TrendingUp className="text-blue-500" size={20} />
+        <div className="max-w-7xl mx-auto px-4 pt-4 pb-2">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-4 gap-4">
+                
+                {/* BRANDING */}
+                <div className="flex items-center gap-3">
+                    <div className="bg-gradient-to-br from-blue-600 to-blue-800 p-2.5 rounded-xl border border-blue-400/20 shadow-lg shadow-blue-900/20">
+                        <TrendingUp className="text-white" size={20} strokeWidth={3} />
                     </div>
                     <div className="flex flex-col">
-                        <span className="block text-lg font-bold text-white leading-none">
-                            NBA Scanner <span className="text-slate-500 text-sm ml-1">v2</span>
+                        <span className="block text-xl font-bold text-white tracking-tight leading-none">
+                            EdgeScanner
                         </span>
-                    </div>
-                    {!isPaid && (
-                        <div className="ml-2 bg-red-500/10 border border-red-500/20 p-1.5 rounded text-red-400">
-                            <Lock size={14} />
+                        <div className="flex items-center gap-2 mt-0.5">
+                            <span className="text-[10px] uppercase font-bold text-blue-400 tracking-widest bg-blue-400/10 px-1.5 rounded">
+                                PRO
+                            </span>
+                            {!isPaid && (
+                                <span className="text-[10px] text-slate-500 flex items-center gap-1">
+                                    <Lock size={10} /> Limited View
+                                </span>
+                            )}
                         </div>
-                    )}
+                    </div>
                 </div>
                 
-                {/* VIEW TOGGLE & STATUS */}
-                <div className="flex flex-col items-end gap-2">
-                    {/* View Switcher */}
-                    <div className="flex bg-[#161F32] p-1 rounded-lg border border-slate-700">
+                {/* CONTROLS */}
+                <div className="flex items-center gap-3 w-full md:w-auto">
+                     {/* SEGMENTED CONTROL (TOGGLE) */}
+                    <div className="flex bg-[#161F32] p-1 rounded-lg border border-slate-700/50 relative w-full md:w-auto">
                         <button 
                             onClick={() => setViewMode('scanner')}
-                            className={`p-1.5 rounded-md transition-all ${viewMode === 'scanner' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}
-                            title="Scanner View (Detailed)"
+                            className={`flex-1 md:flex-none px-4 py-1.5 text-xs font-bold rounded-md transition-all ${
+                                viewMode === 'scanner' 
+                                ? 'bg-blue-600 text-white shadow-md' 
+                                : 'text-slate-500 hover:text-slate-300'
+                            }`}
                         >
-                            <LayoutList size={16} />
+                            Scanner
                         </button>
                         <button 
                             onClick={() => setViewMode('steamers')}
-                            className={`p-1.5 rounded-md transition-all ${viewMode === 'steamers' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}
-                            title="Steamer Grid (Visual)"
+                            className={`flex-1 md:flex-none px-4 py-1.5 text-xs font-bold rounded-md transition-all flex items-center justify-center gap-1.5 ${
+                                viewMode === 'steamers' 
+                                ? 'bg-blue-600 text-white shadow-md' 
+                                : 'text-slate-500 hover:text-slate-300'
+                            }`}
                         >
-                            <LayoutGrid size={16} />
+                            <Zap size={12} className={viewMode === 'steamers' ? 'text-yellow-300 fill-yellow-300' : ''} />
+                            Steam Grid
                         </button>
                     </div>
 
+                    {/* FREE PASS STATUS */}
                     {trialTimeLeft && (
-                        <span className="text-[10px] md:text-xs font-bold text-emerald-400 bg-emerald-400/10 px-2 py-0.5 rounded border border-emerald-400/20 animate-pulse whitespace-nowrap">
-                            Free Pass: {trialTimeLeft}
-                        </span>
+                        <div className="hidden md:flex flex-col items-end">
+                             <span className="text-[9px] font-bold text-emerald-400 uppercase tracking-wider">
+                                Trial Active
+                            </span>
+                             <span className="text-[10px] font-mono text-emerald-500/80">
+                                {trialTimeLeft}
+                            </span>
+                        </div>
                     )}
                 </div>
             </div>
@@ -352,7 +372,7 @@ export default function Home() {
                 placeholder={`Find a ${activeSport === 'MMA' ? 'fight' : 'game'}...`}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full bg-[#161F32] border border-slate-700 rounded-lg py-3 pl-10 pr-4 text-sm text-white focus:outline-none focus:border-blue-500 transition-colors"
+                className="w-full bg-[#161F32] border border-slate-700 rounded-lg py-3 pl-10 pr-4 text-sm text-white focus:outline-none focus:border-blue-500 transition-colors placeholder:text-slate-600"
             />
         </div>
 
