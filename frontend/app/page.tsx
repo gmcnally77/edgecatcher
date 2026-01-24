@@ -118,10 +118,7 @@ const groupData = (data: any[]) => {
 
 export default function Home() {
   const [activeSport, setActiveSport] = useState('Basketball');
-  
-  // ✅ NEW: View Toggle State ('scanner' = Old View, 'steamers' = New Grid)
   const [viewMode, setViewMode] = useState<'scanner' | 'steamers'>('scanner'); 
-
   const [competitions, setCompetitions] = useState<Record<string, any[]>>({});
   const [steamerEvents, setSteamerEvents] = useState<Set<string>>(new Set());
   const [steamerSignals, setSteamerSignals] = useState<Map<string, any>>(new Map());
@@ -136,7 +133,6 @@ export default function Home() {
   const [paymentRef, setPaymentRef] = useState('');
   const [copied, setCopied] = useState(false);
   
-  // ... (Keep existing Paywall useEffects unchanged) ...
   useEffect(() => {
     const timer = setInterval(() => {
         const start = typeof window !== 'undefined' ? localStorage.getItem('trial_start') : null;
@@ -174,7 +170,6 @@ export default function Home() {
     }).then(() => {});
   }, []);
 
-  // ... (Keep existing Paywall handlers unchanged) ...
   const handleUnlock = () => {
     setPaymentRef(`NBA-${Math.floor(1000 + Math.random() * 9000)}`);
     setShowPaymentModal(true);
@@ -344,7 +339,6 @@ export default function Home() {
 
       <div className="max-w-7xl mx-auto px-4 py-6 space-y-6">
         
-        {/* LOGIC PROVIDER (Hidden) */}
         <SteamersPanel 
             activeSport={activeSport} 
             onSteamersChange={handleSteamersChange} 
@@ -373,7 +367,6 @@ export default function Home() {
             let globalGameIndex = 0; 
             const allMarkets: any[] = [];
             
-            // Common Filter Logic
             const filterMarkets = (markets: any[]) => markets.filter(m => 
                 m.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
                 m.selections.some((s: any) => s.name.toLowerCase().includes(searchQuery.toLowerCase()))
@@ -444,7 +437,7 @@ export default function Home() {
             }
 
             // ============================================
-            // MODE B: SCANNER LIST (Detailed, Old UI)
+            // MODE B: SCANNER LIST (Detailed, Restored)
             // ============================================
             return (
                 <div className="space-y-8">
@@ -505,11 +498,11 @@ export default function Home() {
                                                                 const diff = ((bestBookPrice / mid) - 1) * 100;
                                                                 
                                                                 // Restore Value Text & Styling
-                                                                if (diff > -5.0) { // Only show if close enough
+                                                                if (diff > -5.0) { 
                                                                      const sign = diff > 0 ? '+' : '';
                                                                      const color = diff > 0 ? 'text-green-400' : 'text-slate-500';
                                                                      valueText = (
-                                                                         <span className="text-[10px] text-slate-500 mt-1 font-mono">
+                                                                         <span className="text-[10px] text-slate-500 mt-1 font-mono block">
                                                                              Best: <span className="text-slate-300 font-bold">{bestBookName} {bestBookPrice.toFixed(2)}</span> <span className={color}>({sign}{diff.toFixed(1)}%)</span>
                                                                          </span>
                                                                      );
@@ -537,7 +530,7 @@ export default function Home() {
                                                                 </div>
 
                                                                 {/* PRICES */}
-                                                                <div className="flex flex-1 gap-2 overflow-x-auto items-center">
+                                                                <div className="flex flex-1 gap-2 items-center justify-end">
                                                                     {/* EXCHANGE */}
                                                                     <div className="flex gap-1 mr-4">
                                                                         <PriceBox label="BACK" price={runner.exchange.back} type="back" />
