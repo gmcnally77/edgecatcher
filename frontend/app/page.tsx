@@ -9,7 +9,7 @@ import {
 import SteamersPanel from '@/components/SteamersPanel';
 
 // --- CONFIG ---
-const STEAMER_TEST_MODE = true; // ✅ ACTIVE: Forces visibility for testing
+const STEAMER_TEST_MODE = true; // ✅ ACTIVE: Shows ALL markets in Grid for UI testing
 // --------------
 
 const SPORTS = [
@@ -400,17 +400,18 @@ export default function Home() {
             if (viewMode === 'steamers') {
                 Object.values(competitions).forEach(markets => markets.forEach(m => allMarkets.push(m)));
                 
-                // ✅ RESTORED: Strict filtering for Steam Mode
-                // Only show markets where at least one runner is steaming
+                // ✅ FILTER LOGIC FIXED:
+                // If Test Mode -> Show ALL filtered markets (ignore steam requirement)
+                // If Real Mode -> Only show markets with Active Steam
                 const steamerMarkets = allMarkets.filter((m: any) => 
-                    m.selections.some((s: any) => steamerEvents.has(s.name))
+                    STEAMER_TEST_MODE 
+                        ? true // 🚨 SHOW EVERYTHING (Nuclear Bypass)
+                        : m.selections.some((s: any) => steamerEvents.has(s.name))
                 );
 
-                const marketsToShow = STEAMER_TEST_MODE 
-                    ? steamerMarkets 
-                    : steamerMarkets; 
+                const marketsToShow = filterMarkets(steamerMarkets);
 
-                // ✅ RESTORED: Empty State for "No Steam"
+                // If nothing found in "Steam Mode", show message
                 if (marketsToShow.length === 0) {
                     return (
                         <div className="flex flex-col items-center justify-center py-20 text-slate-500">
@@ -694,6 +695,7 @@ const PriceBox = ({ label, price, type }: any) => (
 );
 
 const BookieBox = ({ label, price, color, isBest }: any) => {
+    // 🎨 Improved Styling: Standardized widths + Glow for Best Price
     const gradients: any = {
         orange: 'from-orange-900/40 to-orange-950/40 border-orange-500/30 text-orange-200',
         red: 'from-red-900/40 to-red-950/40 border-red-500/30 text-red-200',
