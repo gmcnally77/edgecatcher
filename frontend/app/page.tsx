@@ -9,7 +9,7 @@ import {
 import SteamersPanel from '@/components/SteamersPanel';
 
 // --- CONFIG ---
-const STEAMER_TEST_MODE = true; // ✅ KEPT TRUE FOR VISIBILITY
+const STEAMER_TEST_MODE = true; // ✅ ACTIVE: Forces visibility for testing
 // --------------
 
 const SPORTS = [
@@ -400,22 +400,22 @@ export default function Home() {
             if (viewMode === 'steamers') {
                 Object.values(competitions).forEach(markets => markets.forEach(m => allMarkets.push(m)));
                 
-                // ✅ FIX: Filter based on whether ANY runner in the market is steaming
+                // ✅ RESTORED: Strict filtering for Steam Mode
+                // Only show markets where at least one runner is steaming
                 const steamerMarkets = allMarkets.filter((m: any) => 
                     m.selections.some((s: any) => steamerEvents.has(s.name))
                 );
 
-                // Use the filtered list (or all if not filtering? No, grid only shows steamers)
                 const marketsToShow = STEAMER_TEST_MODE 
-                    ? steamerMarkets // In test mode, we only show valid steamers
+                    ? steamerMarkets 
                     : steamerMarkets; 
 
-                // If nothing found in "Steam Mode", show message
+                // ✅ RESTORED: Empty State for "No Steam"
                 if (marketsToShow.length === 0) {
                     return (
                         <div className="flex flex-col items-center justify-center py-20 text-slate-500">
                             <Zap size={48} className="mb-4 opacity-20" />
-                            <p>No Steam Detected Yet</p>
+                            <p className="text-lg font-medium">No Steam Detected Yet</p>
                             <p className="text-xs mt-2 opacity-50">Waiting for market moves...</p>
                         </div>
                     );
@@ -694,7 +694,6 @@ const PriceBox = ({ label, price, type }: any) => (
 );
 
 const BookieBox = ({ label, price, color, isBest }: any) => {
-    // 🎨 Improved Styling: Standardized widths + Glow for Best Price
     const gradients: any = {
         orange: 'from-orange-900/40 to-orange-950/40 border-orange-500/30 text-orange-200',
         red: 'from-red-900/40 to-red-950/40 border-red-500/30 text-red-200',
