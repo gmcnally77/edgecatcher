@@ -31,10 +31,11 @@ export default function SteamersPanel({ activeSport, onSteamersChange }: any) {
       const initial = history[history.length - 1].mid_price;
       const delta = ((initial - current) / initial) * 100;
 
-      // Threshold: 1.5% move
-      if (Math.abs(delta) >= 1.5) {
+      // ✅ ADJUSTED THRESHOLD: 1.0% (Was 1.5%)
+      // This is more sensitive for pre-match markets
+      if (Math.abs(delta) >= 1.0) {
         signals.set(name, {
-          label: delta > 0 ? 'STEAM' : 'DRIFT',
+          label: delta > 0 ? 'STEAMER' : 'DRIFTER',
           pct: Math.abs(delta) / 100
         });
       }
