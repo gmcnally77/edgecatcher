@@ -14,7 +14,7 @@ ALERT_MIN_VOLUME = float(os.getenv("ALERT_MIN_VOLUME", "200.0"))
 ALERT_COOLDOWN_SECONDS = int(os.getenv("ALERT_COOLDOWN_SECONDS", "600"))
 
 # NEW: STRICT STEAMER GATES
-ALERT_MIN_PRICE_ADVANTAGE = 0.02  # Bookie must be 2% higher than Lay
+ALERT_MIN_PRICE_ADVANTAGE = 0.01  # Bookie must be 2% higher than Lay
 ALERT_MAX_SPREAD = 0.04           # Exchange Spread must be < 4%
 
 # Guard: Only run logic if this mode is active

@@ -222,11 +222,12 @@ export default function Home() {
   );
 
   const visibleSports = SCOPE_MODE.startsWith("NBA_PREMATCH_ML") 
-    ? SPORTS.filter(s => s.id === 'Basketball') 
+    ? SPORTS.filter(s => s.id === 'Basketball' || s.id === 'MMA') 
     : SPORTS;
 
   useEffect(() => {
-    if (SCOPE_MODE.startsWith("NBA_PREMATCH_ML") && activeSport !== 'Basketball') {
+    // Only force Basketball if not landing on a valid visible sport
+    if (SCOPE_MODE.startsWith("NBA_PREMATCH_ML") && activeSport !== 'Basketball' && activeSport !== 'MMA') {
       setActiveSport('Basketball');
     }
   }, []);

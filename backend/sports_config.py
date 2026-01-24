@@ -134,6 +134,6 @@ ALIAS_MAP = {
 SCOPE_MODE = os.getenv("SCOPE_MODE", "")
 
 if SCOPE_MODE.startswith("NBA_PREMATCH_ML"):
-    # 1. Filter Sports to NBA Only
-    SPORTS_CONFIG = [s for s in SPORTS_CONFIG if s["name"] == "Basketball"]
+    # 1. Filter Sports to NBA & MMA
+    SPORTS_CONFIG = [s for s in SPORTS_CONFIG if s["name"] in ["Basketball", "MMA"]]
     print(f">> 🔒 SCOPE_MODE ACTIVE: {SCOPE_MODE} (Filtering Sports)")
