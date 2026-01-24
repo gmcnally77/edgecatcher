@@ -517,25 +517,27 @@ export default function Home() {
                                             })()}
                                         </div>
 
-                                        {/* PRICE SECTION: BLOOMBERG TERMINAL UI */}
+{/* PRICE SECTION: UNIFORM TERMINAL UI */}
                                             <div className="relative w-full md:w-auto">
-                                                <div className={`flex items-start md:items-center gap-2 md:gap-3 ${isPaywalled ? 'blur-sm select-none opacity-40 pointer-events-none' : ''}`}>
+                                                <div className={`flex flex-wrap md:flex-nowrap items-center gap-2 ${isPaywalled ? 'blur-sm select-none opacity-40 pointer-events-none' : ''}`}>
                                                     
-                                                    {/* GROUP 1: THE EXCHANGE (Mobile: Stacked | Desktop: Side-by-Side) */}
-                                                    <div className="flex flex-col-reverse md:flex-row gap-1 md:gap-2 mr-1 md:mr-2 flex-shrink-0">
+                                                    {/* GROUP 1: THE EXCHANGE (Restored to Full Size Uniformity) */}
+                                                    <div className="flex gap-2 mr-1 md:mr-2 flex-shrink-0">
                                                         {/* BACK (Blue) */}
-                                                        <div className="w-[60px] md:w-[70px] h-[26px] md:h-[50px] rounded md:rounded-lg flex flex-row md:flex-col justify-between md:justify-center items-center px-1.5 md:px-0 
-                                                            bg-[#0f172a] border border-blue-500/30 shadow-inner shadow-blue-500/10">
-                                                            <span className="text-[9px] text-blue-500 font-bold uppercase tracking-wider md:mb-0.5">Back</span>
-                                                            <span className="text-sm md:text-lg font-mono font-bold text-blue-400 leading-none">
+                                                        <div className="group relative w-[64px] md:w-[70px] h-[50px] rounded-lg flex flex-col justify-center items-center 
+                                                            bg-[#0f172a] border border-blue-500/30 shadow-inner shadow-blue-500/10
+                                                            active:translate-y-[1px] transition-all cursor-default">
+                                                            <span className="text-[9px] text-blue-500 font-bold uppercase tracking-wider mb-0.5">Back</span>
+                                                            <span className="text-lg font-mono font-bold text-blue-400 leading-none">
                                                                 {formatPrice(runner.exchange.back)}
                                                             </span>
                                                         </div>
-                                                        {/* LAY (Pink) - On Mobile, this sits ON TOP */}
-                                                        <div className="w-[60px] md:w-[70px] h-[34px] md:h-[50px] rounded md:rounded-lg flex flex-row md:flex-col justify-between md:justify-center items-center px-1.5 md:px-0 
-                                                            bg-[#0f172a] border border-pink-500/30 shadow-inner shadow-pink-500/10 relative z-10">
-                                                            <span className="text-[9px] text-pink-500 font-bold uppercase tracking-wider md:mb-0.5">Lay</span>
-                                                            <span className="text-sm md:text-lg font-mono font-bold text-pink-400 leading-none">
+                                                        {/* LAY (Pink) */}
+                                                        <div className="group relative w-[64px] md:w-[70px] h-[50px] rounded-lg flex flex-col justify-center items-center 
+                                                            bg-[#0f172a] border border-pink-500/30 shadow-inner shadow-pink-500/10
+                                                            active:translate-y-[1px] transition-all cursor-default">
+                                                            <span className="text-[9px] text-pink-500 font-bold uppercase tracking-wider mb-0.5">Lay</span>
+                                                            <span className="text-lg font-mono font-bold text-pink-400 leading-none">
                                                                 {formatPrice(runner.exchange.lay)}
                                                             </span>
                                                         </div>
@@ -545,11 +547,10 @@ export default function Home() {
                                                     <div className="hidden md:block w-px h-8 bg-slate-700/50 mr-1"></div>
                                                 
                                                     {/* GROUP 2: THE OPPORTUNITIES (Bookies) */}
-                                                    {/* On mobile, these will align with the top of the container (The Lay Price) */}
                                                     <div className="flex flex-wrap md:flex-nowrap gap-2">
 
                                                         {/* PINNACLE: Molten Orange Glass */}
-                                                        <div className="group relative w-[60px] md:w-[70px] h-[50px] rounded-lg flex flex-col justify-center items-center 
+                                                        <div className="group relative w-[64px] md:w-[70px] h-[50px] rounded-lg flex flex-col justify-center items-center 
                                                             bg-gradient-to-b from-[#ff8c00] to-[#e65100] 
                                                             border-t border-white/20 border-b border-black/30 shadow-lg shadow-orange-900/20 
                                                             active:translate-y-[1px] transition-all cursor-default">
@@ -564,7 +565,7 @@ export default function Home() {
                                                         {(() => {
                                                             const isWilliamHill = activeSport === 'MMA';
                                                             return (
-                                                                <div className={`group relative w-[60px] md:w-[70px] h-[50px] rounded-lg flex flex-col justify-center items-center 
+                                                                <div className={`group relative w-[64px] md:w-[70px] h-[50px] rounded-lg flex flex-col justify-center items-center 
                                                                     border-t border-white/20 border-b border-black/30 shadow-lg 
                                                                     active:translate-y-[1px] transition-all cursor-default
                                                                     ${isWilliamHill 
@@ -585,7 +586,7 @@ export default function Home() {
                                                         })()}
 
                                                         {/* PADDY POWER: Emerald Glass */}
-                                                        <div className="group relative w-[60px] md:w-[70px] h-[50px] rounded-lg flex flex-col justify-center items-center 
+                                                        <div className="group relative w-[64px] md:w-[70px] h-[50px] rounded-lg flex flex-col justify-center items-center 
                                                             bg-gradient-to-b from-[#005c40] to-[#002b1e] 
                                                             border-t border-white/20 border-b border-black/30 shadow-lg shadow-green-900/20 
                                                             active:translate-y-[1px] transition-all cursor-default">
