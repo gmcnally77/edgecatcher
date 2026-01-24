@@ -3,13 +3,11 @@ import { useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../utils/supabase';
 
 // --- CONFIGURATION ---
-const STEAM_WINDOW_MINUTES = 30;  // Look back 30 mins (Matched to query limit)
-const MIN_VOLUME = 500;           // Ignore low liquidity markets
+const STEAM_WINDOW_MINUTES = 1440; // 🚨 LOOK BACK 24 HOURS (Catch everything)
+const MIN_VOLUME = 0;              // 🚨 ZERO VOLUME FILTER (Show me everything)
+const STEAM_THRESHOLD = 0.0001;    // 🚨 0.01% THRESHOLD (Trigger on breathing)
+const DRIFT_THRESHOLD = 0.03;      
 
-// ⚠️ TEST MODE: 0.0001 (0.01%) - Triggers on everything
-// 🟢 PROD MODE: 0.03 (3.0%) - Triggers on real steam
-const STEAM_THRESHOLD = 0.0001;   
-const DRIFT_THRESHOLD = 0.03;     
 const MAX_SNAPSHOTS = 2000;       
 
 interface Snapshot {
@@ -30,10 +28,10 @@ export default function SteamersPanel({ activeSport, onSteamersChange }: any) {
   const fetchMovement = useCallback(async () => {
     if (!activeSport) return;
 
-    const timeHorizon = new Date(Date.now() - STEAM_WINDOW_MINUTES * 60 * 1000).toISOString();
-
     // 1. FETCH (Newest First)
-    // We sort descending to ensure we get the latest prices even if the DB is huge.
+    // Looking back 24 hours to guarantee we find your data
+    const timeHorizon = new Date(Date.now() - STEAM_WINDOW_MINUTES * 60 * 1000).toISOString();
+    
     const { data, error } = await supabase
       .from('market_snapshots')
       .select('runner_name, mid_price, volume, ts')
@@ -42,7 +40,13 @@ export default function SteamersPanel({ activeSport, onSteamersChange }: any) {
       .order('ts', { ascending: false }) // Newest first
       .limit(MAX_SNAPSHOTS);
 
-    if (error || !data || data.length === 0) {
+    if (error) {
+      console.error("Supabase Error:", error);
+      return;
+    }
+
+    if (!data || data.length === 0) {
+      // console.log(`[Steamers] Empty DB for ${activeSport}`);
       if (isMounted.current) onSteamersChange(new Set(), new Map());
       return;
     }
@@ -60,25 +64,22 @@ export default function SteamersPanel({ activeSport, onSteamersChange }: any) {
     // 3. ANALYZE
     Object.entries(groups).forEach(([name, rawHistory]) => {
       // rawHistory is [Newest, ..., Oldest]
-      // Reverse it to be [Oldest, ..., Newest] for logical comparison
+      // Reverse to [Oldest, ..., Newest]
       const history = rawHistory.reverse(); 
 
       if (history.length < 2) return;
 
-      const start = history[0];                // Oldest
-      const end = history[history.length - 1]; // Newest (Current)
+      const start = history[0];                
+      const end = history[history.length - 1]; 
 
-      // A. Freshness Check (Ignore stale data > 15 mins old)
-      const lastUpdate = new Date(end.ts).getTime();
-      if (Date.now() - lastUpdate > 15 * 60 * 1000) return;
+      // 🛑 REMOVED: Freshness Check (This was killing your data)
+      // 🛑 REMOVED: Volume Check (Set to 0 above)
 
-      // B. Volume Check
-      if (end.volume < MIN_VOLUME) return;
-
-      // C. Price Logic
-      // Delta = (Old - New) / Old
-      // Example: (2.00 - 1.80) / 2.00 = +0.10 (10% Steam)
+      // Price Logic
       const delta = (start.mid_price - end.mid_price) / start.mid_price;
+      
+      // LOG EVERYTHING (Check your browser console)
+      // console.log(`ANALYZING ${name}: ${start.mid_price} -> ${end.mid_price} (Delta: ${delta})`);
 
       if (delta >= STEAM_THRESHOLD) {
         signals.set(name, {
@@ -88,18 +89,19 @@ export default function SteamersPanel({ activeSport, onSteamersChange }: any) {
           endPrice: end.mid_price
         });
         eventSet.add(name);
-      } else if (delta <= -DRIFT_THRESHOLD) {
+      } 
+      else if (delta <= -DRIFT_THRESHOLD) {
         signals.set(name, {
           label: 'DRIFTER',
           pct: Math.abs(delta),
           startPrice: start.mid_price,
           endPrice: end.mid_price
         });
-        // eventSet.add(name); // Optional: Enable to see Drifters too
+        // Uncomment to see drifters in grid
+        // eventSet.add(name); 
       }
     });
 
-    // 4. BROADCAST
     if (isMounted.current) {
       onSteamersChange(eventSet, signals);
     }
@@ -108,7 +110,7 @@ export default function SteamersPanel({ activeSport, onSteamersChange }: any) {
 
   useEffect(() => {
     fetchMovement();
-    const interval = setInterval(fetchMovement, 10000); // Poll every 10s
+    const interval = setInterval(fetchMovement, 5000); 
     return () => clearInterval(interval);
   }, [fetchMovement]);
 
