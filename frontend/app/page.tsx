@@ -420,7 +420,7 @@ export default function Home() {
                                     <div className="h-px bg-slate-700 flex-1"></div>
                                 </div>
                             )}
-                        <div className={`bg-[#161F32] border ${borderClass} rounded-xl overflow-hidden hover:border-blue-500/30 transition-all`}>
+                        <div className={`bg-[#161F32] border ${borderClass} rounded-xl overflow-hidden hover:border-blue-500/30 transition-all min-h-[160px]`}>
                             <div className="bg-[#0f1522] px-4 py-3 border-b border-slate-800 flex justify-between items-center">
                                 <h3 className="text-slate-200 font-bold text-sm truncate flex-1 min-w-0 pr-2">
                                     {event.name}
@@ -435,9 +435,9 @@ export default function Home() {
                             </div>
 
                             {/* EVENT SCROLL CONTAINER: Syncs scrolling for all runners */}
-                            <div className={`divide-y divide-slate-800 overflow-x-auto no-scrollbar ${isSuspended ? 'opacity-50 pointer-events-none' : ''}`}>
+                            <div className={`divide-y divide-slate-800 overflow-x-auto no-scrollbar scrollbar-gutter-stable ${isSuspended ? 'opacity-50 pointer-events-none' : ''}`}>
                                 {event.selections?.map((runner: any) => (
-                                    <div key={runner.id} className="flex flex-col md:flex-row md:items-center px-4 py-3 gap-3 md:gap-4 hover:bg-slate-800/30 transition-colors w-full md:min-w-max">
+                                    <div key={runner.id} className="flex flex-col md:flex-row md:items-center px-4 py-3 gap-3 md:gap-4 hover:bg-slate-800/30 transition-colors w-full md:min-w-[600px]">
                                         {/* STICKY NAME COLUMN */}
                                         <div className="w-full md:w-auto md:flex-1 md:min-w-[120px] md:sticky md:left-0 relative z-0 md:z-10 bg-[#161F32] border-b md:border-b-0 md:border-r border-slate-800/50 pb-2 md:pb-0 pr-0 md:pr-4">
                                             <div className="flex items-center gap-2">
