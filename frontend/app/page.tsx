@@ -3,7 +3,8 @@ import { useEffect, useState, useCallback } from 'react';
 import { supabase } from '../utils/supabase';
 import { 
   RefreshCw, TrendingUp, Clock, Radio, Lock, Unlock, 
-  Swords, Trophy, Dribbble, AlertCircle, Copy, Check, Search 
+  Swords, Trophy, Dribbble, AlertCircle, Copy, Check, Search,
+  LayoutGrid, LayoutList //
 } from 'lucide-react';
 import SteamersPanel from '@/components/SteamersPanel';
 
@@ -117,12 +118,13 @@ const groupData = (data: any[]) => {
 
 export default function Home() {
   const [activeSport, setActiveSport] = useState('Basketball');
+  const [viewMode, setViewMode] = useState<'scanner' | 'steamers'>('steamers'); // NEW: View Toggle
   const [competitions, setCompetitions] = useState<Record<string, any[]>>({});
   const [steamerEvents, setSteamerEvents] = useState<Set<string>>(new Set());
   const [steamerSignals, setSteamerSignals] = useState<Map<string, any>>(new Map());
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<string>('');
-  const [searchQuery, setSearchQuery] = useState(''); // NEW: Search State
+  const [searchQuery, setSearchQuery] = useState('');
   
   // PAYWALL STATE
   const [isPaid, setIsPaid] = useState(false);
@@ -289,7 +291,27 @@ export default function Home() {
                         </div>
                     )}
                 </div>
-                <div className="flex flex-col items-end gap-1">
+                
+                {/* VIEW TOGGLE & STATUS */}
+                <div className="flex flex-col items-end gap-2">
+                    {/* View Switcher */}
+                    <div className="flex bg-[#161F32] p-1 rounded-lg border border-slate-700">
+                        <button 
+                            onClick={() => setViewMode('steamers')}
+                            className={`p-1.5 rounded-md transition-all ${viewMode === 'steamers' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}
+                            title="Steamer Grid View"
+                        >
+                            <LayoutGrid size={16} />
+                        </button>
+                        <button 
+                            onClick={() => setViewMode('scanner')}
+                            className={`p-1.5 rounded-md transition-all ${viewMode === 'scanner' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}
+                            title="Scanner List View"
+                        >
+                            <LayoutList size={16} />
+                        </button>
+                    </div>
+
                     {trialTimeLeft && (
                         <span className="text-[10px] md:text-xs font-bold text-emerald-400 bg-emerald-400/10 px-2 py-0.5 rounded border border-emerald-400/20 animate-pulse whitespace-nowrap">
                             Free Pass: {trialTimeLeft}
@@ -343,103 +365,162 @@ export default function Home() {
             </div>
         )}
 
-        {/* MAIN GRID */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* --- MAIN CONTENT SWITCHER --- */}
         {(() => { 
+            // 1. Prepare Data Flattening & Filtering (Shared)
             let globalGameIndex = 0; 
             const allMarkets: any[] = [];
             
-            // Flatten competitions into a single list for the grid
-            Object.values(competitions).forEach(markets => {
-                markets.forEach(m => allMarkets.push(m));
-            });
+            // If Scanner Mode -> Keep grouped by competition for headers
+            // If Steamer Mode -> Flatten for grid
+            // ... Actually, for simplicity, we can flatten for both but render headers in Scanner if we want.
+            // Let's stick to the respective logic of each view.
 
-            // Filter by Search
-            const filteredMarkets = allMarkets.filter(m => 
+            // Common Filter Logic
+            const filterMarkets = (markets: any[]) => markets.filter(m => 
                 m.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
                 m.selections.some((s: any) => s.name.toLowerCase().includes(searchQuery.toLowerCase()))
             );
 
-            return filteredMarkets.map((event: any) => {
-                const isPaywalled = !isPaid && globalGameIndex >= 3;
-                globalGameIndex++;
-
-                const isSuspended = event.market_status === 'SUSPENDED';
-                const isInPlay = event.in_play;
-                let borderClass = 'border-slate-800';
-                if (isSuspended) borderClass = 'border-yellow-500/50';
-                else if (isInPlay) borderClass = 'border-red-500/50 shadow-[0_0_15px_rgba(239,68,68,0.1)]';
+            // --- VIEW 1: STEAMER GRID (The New Product) ---
+            if (viewMode === 'steamers') {
+                Object.values(competitions).forEach(markets => markets.forEach(m => allMarkets.push(m)));
+                const filtered = filterMarkets(allMarkets);
 
                 return (
-                    <div key={event.id} className={`bg-[#161F32] border ${borderClass} rounded-xl overflow-hidden relative group`}>
-                        
-                        {/* CARD HEADER */}
-                        <div className="bg-[#0f1522] px-4 py-3 border-b border-slate-800 flex justify-between items-center">
-                            <h3 className="text-slate-200 font-bold text-sm truncate flex-1 min-w-0 pr-2">
-                                {event.name}
-                            </h3>
-                            <div className="flex items-center gap-3 text-[10px] text-slate-500 font-mono">
-                                {isInPlay && <span className="text-red-500 font-bold tracking-wider flex items-center gap-1"><Radio size={10} className="animate-pulse"/> IN PLAY</span>}
-                                {!isInPlay && <span className="flex items-center gap-1"><Clock size={10}/> {formatTime(event.start_time)}</span>}
-                                <span>Vol: £{event.volume?.toLocaleString()}</span>
-                            </div>
-                        </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {filtered.map((event: any) => {
+                            const isPaywalled = !isPaid && globalGameIndex >= 3;
+                            globalGameIndex++;
 
-                        {/* RUNNERS LIST */}
-                        <div className={`p-4 space-y-3 ${isPaywalled ? 'blur-sm select-none opacity-40 pointer-events-none' : ''}`}>
-                            {event.selections?.map((runner: any) => {
-                                const signal = steamerSignals.get(runner.name);
-                                
-                                return (
-                                    <div key={runner.id} className="flex justify-between items-center">
-                                        <div className="flex items-center gap-2">
-                                            <span className="text-slate-200 font-medium text-sm">{runner.name}</span>
-                                            {/* BADGE: Only show if valid signal exists */}
-                                            {signal && (
-                                                <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider ${
-                                                    signal.label === 'STEAM' 
-                                                        ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' 
-                                                        : 'bg-red-500/10 text-red-400 border border-red-500/20'
-                                                }`}>
-                                                    {signal.label}
-                                                </span>
-                                            )}
-                                        </div>
+                            const isSuspended = event.market_status === 'SUSPENDED';
+                            const isInPlay = event.in_play;
+                            let borderClass = 'border-slate-800';
+                            if (isSuspended) borderClass = 'border-yellow-500/50';
+                            else if (isInPlay) borderClass = 'border-red-500/50 shadow-[0_0_15px_rgba(239,68,68,0.1)]';
 
-                                        <div className="flex gap-2">
-                                            {/* BACK */}
-                                            <div className="w-16 h-10 bg-[#0f172a] border border-blue-500/30 rounded flex flex-col items-center justify-center">
-                                                <span className="text-[7px] text-blue-500 uppercase font-bold leading-none mb-0.5">Back</span>
-                                                <span className="text-sm font-bold text-blue-400 leading-none">{formatPrice(runner.exchange.back)}</span>
-                                            </div>
-                                            {/* LAY */}
-                                            <div className="w-16 h-10 bg-[#1a0f14] border border-pink-500/40 rounded flex flex-col items-center justify-center">
-                                                <span className="text-[7px] text-pink-500 uppercase font-bold leading-none mb-0.5">Lay</span>
-                                                <span className="text-sm font-bold text-pink-400 leading-none">{formatPrice(runner.exchange.lay)}</span>
-                                            </div>
+                            return (
+                                <div key={event.id} className={`bg-[#161F32] border ${borderClass} rounded-xl overflow-hidden relative group`}>
+                                    <div className="bg-[#0f1522] px-4 py-3 border-b border-slate-800 flex justify-between items-center">
+                                        <h3 className="text-slate-200 font-bold text-sm truncate flex-1 min-w-0 pr-2">{event.name}</h3>
+                                        <div className="flex items-center gap-3 text-[10px] text-slate-500 font-mono">
+                                            {isInPlay && <span className="text-red-500 font-bold tracking-wider flex items-center gap-1"><Radio size={10} className="animate-pulse"/> IN PLAY</span>}
+                                            {!isInPlay && <span className="flex items-center gap-1"><Clock size={10}/> {formatTime(event.start_time)}</span>}
+                                            <span>Vol: £{event.volume?.toLocaleString()}</span>
                                         </div>
                                     </div>
-                                );
-                            })}
-                        </div>
-
-                        {/* PAYWALL OVERLAY */}
-                        {isPaywalled && (
-                            <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-slate-900/60 backdrop-blur-[2px]">
-                                <button 
-                                    onClick={handleUnlock}
-                                    className="bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-bold px-4 py-2 rounded-lg shadow-xl border border-blue-400/50 flex items-center gap-2 hover:scale-105 transition-all"
-                                >
-                                    <Lock size={12} className="text-yellow-400" />
-                                    Unlock
-                                </button>
-                            </div>
-                        )}
+                                    <div className={`p-4 space-y-3 ${isPaywalled ? 'blur-sm select-none opacity-40 pointer-events-none' : ''}`}>
+                                        {event.selections?.map((runner: any) => {
+                                            const signal = steamerSignals.get(runner.name);
+                                            return (
+                                                <div key={runner.id} className="flex justify-between items-center">
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="text-slate-200 font-medium text-sm">{runner.name}</span>
+                                                        {signal && (
+                                                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider ${
+                                                                signal.label === 'STEAM' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'
+                                                            }`}>{signal.label}</span>
+                                                        )}
+                                                    </div>
+                                                    <div className="flex gap-2">
+                                                        <div className="w-16 h-10 bg-[#0f172a] border border-blue-500/30 rounded flex flex-col items-center justify-center">
+                                                            <span className="text-[7px] text-blue-500 uppercase font-bold leading-none mb-0.5">Back</span>
+                                                            <span className="text-sm font-bold text-blue-400 leading-none">{formatPrice(runner.exchange.back)}</span>
+                                                        </div>
+                                                        <div className="w-16 h-10 bg-[#1a0f14] border border-pink-500/40 rounded flex flex-col items-center justify-center">
+                                                            <span className="text-[7px] text-pink-500 uppercase font-bold leading-none mb-0.5">Lay</span>
+                                                            <span className="text-sm font-bold text-pink-400 leading-none">{formatPrice(runner.exchange.lay)}</span>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                    {isPaywalled && <PaywallOverlay onUnlock={handleUnlock} />}
+                                </div>
+                            );
+                        })}
                     </div>
                 );
-            });
+            }
+
+            // --- VIEW 2: SCANNER LIST (The Old Product - Detailed) ---
+            return (
+                <div className="space-y-8">
+                    {Object.entries(competitions).map(([compName, markets]) => {
+                        const filtered = filterMarkets(markets);
+                        if (filtered.length === 0) return null;
+
+                        return (
+                            <div key={compName}>
+                                <h2 className="text-white font-bold text-lg mb-4 flex items-center gap-2">
+                                    <span className="w-1 h-6 bg-blue-500 rounded-full"></span> {compName}
+                                </h2>
+                                <div className="space-y-4">
+                                    {filtered.map((event: any) => {
+                                        const isPaywalled = !isPaid && globalGameIndex >= 3;
+                                        globalGameIndex++;
+                                        
+                                        const isSuspended = event.market_status === 'SUSPENDED';
+                                        const isInPlay = event.in_play;
+                                        let borderClass = 'border-slate-700/50';
+                                        if (isSuspended) borderClass = 'border-yellow-500/50';
+                                        else if (isInPlay) borderClass = 'border-red-500/50';
+
+                                        return (
+                                            <div key={event.id} className={`bg-[#161F32] border ${borderClass} rounded-xl overflow-hidden relative`}>
+                                                <div className="bg-[#0f1522] px-4 py-3 border-b border-slate-800 flex justify-between items-center">
+                                                    <h3 className="text-slate-200 font-bold text-sm">{event.name}</h3>
+                                                    <div className="flex gap-2 text-xs text-slate-500">
+                                                        {isInPlay ? <span className="text-red-500 font-bold">LIVE</span> : formatTime(event.start_time)}
+                                                    </div>
+                                                </div>
+                                                
+                                                <div className={`divide-y divide-slate-800 ${isPaywalled ? 'blur-sm select-none opacity-40 pointer-events-none' : ''}`}>
+                                                    {event.selections?.map((runner: any) => {
+                                                        const signal = steamerSignals.get(runner.name);
+                                                        return (
+                                                            <div key={runner.id} className="flex flex-col md:flex-row md:items-center px-4 py-3 gap-3">
+                                                                {/* NAME + SIGNAL */}
+                                                                <div className="md:w-1/3 flex items-center gap-2">
+                                                                    <span className="text-white font-medium">{runner.name}</span>
+                                                                    {signal && (
+                                                                        <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${signal.label === 'STEAM' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'}`}>
+                                                                            {signal.label}
+                                                                        </span>
+                                                                    )}
+                                                                </div>
+
+                                                                {/* PRICES */}
+                                                                <div className="flex flex-1 gap-2 overflow-x-auto">
+                                                                    {/* EXCHANGE */}
+                                                                    <div className="flex gap-1 mr-4">
+                                                                        <PriceBox label="BACK" price={runner.exchange.back} type="back" />
+                                                                        <PriceBox label="LAY" price={runner.exchange.lay} type="lay" />
+                                                                    </div>
+                                                                    
+                                                                    {/* BOOKIES */}
+                                                                    <div className="flex gap-2 pl-4 border-l border-slate-700/50">
+                                                                        <BookieBox label="PIN" price={runner.bookmakers.pinnacle} color="orange" />
+                                                                        <BookieBox label={activeSport === 'MMA' ? "WH" : "LAD"} price={runner.bookmakers.ladbrokes} color="red" />
+                                                                        <BookieBox label="PP" price={runner.bookmakers.paddypower} color="green" />
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                                {isPaywalled && <PaywallOverlay onUnlock={handleUnlock} />}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+            );
         })()}
-        </div>
         
         {/* EMPTY STATE */}
         {Object.keys(competitions).length === 0 && !loading && (
@@ -504,3 +585,41 @@ export default function Home() {
     </div>
   );
 }
+
+// --- SUB-COMPONENTS FOR CLEANER JSX ---
+
+const PriceBox = ({ label, price, type }: any) => (
+    <div className={`w-14 h-10 rounded flex flex-col items-center justify-center border ${type === 'back' ? 'bg-[#0f172a] border-blue-500/30' : 'bg-[#1a0f14] border-pink-500/40'}`}>
+        <span className={`text-[7px] uppercase font-bold leading-none mb-0.5 ${type === 'back' ? 'text-blue-500' : 'text-pink-500'}`}>{label}</span>
+        <span className={`text-sm font-bold leading-none ${type === 'back' ? 'text-blue-400' : 'text-pink-400'}`}>{price ? price.toFixed(2) : '—'}</span>
+    </div>
+);
+
+const BookieBox = ({ label, price, color }: any) => {
+    // Basic gradient logic
+    const gradients: any = {
+        orange: 'from-orange-600/20 to-orange-900/20 border-orange-500/30 text-orange-200',
+        red: 'from-red-600/20 to-red-900/20 border-red-500/30 text-red-200',
+        green: 'from-emerald-600/20 to-emerald-900/20 border-emerald-500/30 text-emerald-200',
+    };
+    const style = gradients[color] || gradients.orange;
+
+    return (
+        <div className={`w-14 h-10 rounded flex flex-col items-center justify-center bg-gradient-to-b border ${style}`}>
+            <span className="text-[7px] uppercase font-bold leading-none mb-0.5 opacity-70">{label}</span>
+            <span className="text-sm font-bold leading-none">{price && price > 1 ? price.toFixed(2) : '—'}</span>
+        </div>
+    );
+};
+
+const PaywallOverlay = ({ onUnlock }: any) => (
+    <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-slate-900/60 backdrop-blur-[2px]">
+        <button 
+            onClick={onUnlock}
+            className="bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-bold px-4 py-2 rounded-lg shadow-xl border border-blue-400/50 flex items-center gap-2 hover:scale-105 transition-all"
+        >
+            <Lock size={12} className="text-yellow-400" />
+            Unlock
+        </button>
+    </div>
+);
