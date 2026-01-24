@@ -14,7 +14,7 @@ from supabase import create_client, Client
 
 # --- LOGGING SETUP ---
 # Controls detailed per-item logging (default: False)
-DEBUG_MODE = os.getenv('APP_DEBUG', '0') == '1'
+DEBUG_MODE = False
 
 logging.basicConfig(
     level=logging.INFO,
@@ -399,10 +399,9 @@ def run_spy():
             bookmakers = event.get('bookmakers', []) or []
             pin_book = next((b for b in bookmakers if 'pinnacle' in str(b.get('key', '')).lower()), None)
             
-            # Primary bookmaker selection (William Hill for MMA, Ladbrokes for Others)
+            # ✅ FIX: Dynamically switch to 'william' if the config asks for it
             primary_key = 'william' if sport.get('use_williamhill_as_primary') else 'ladbrokes'
             ladbrokes_book = next((b for b in bookmakers if primary_key in str(b.get('key', '')).lower()), None)
-            
             paddy_book = next((b for b in bookmakers if 'paddypower' in str(b.get('key', '')).lower()), None)
 
             ref_outcomes = get_h2h(pin_book) or get_h2h(ladbrokes_book) or get_h2h(paddy_book)
