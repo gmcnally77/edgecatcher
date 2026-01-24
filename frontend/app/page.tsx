@@ -225,7 +225,7 @@ export default function Home() {
 
     if (!error && data) {
       const now = new Date();
-      const heartbeatCutoff = new Date(now.getTime() - 300 * 1000); 
+      const heartbeatCutoff = new Date(now.getTime() - 24 * 60 * 60 * 1000);
 
       const activeRows = data.filter((row: any) => {
         if (row.last_updated && new Date(row.last_updated) < heartbeatCutoff) return false;
