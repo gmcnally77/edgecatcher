@@ -434,120 +434,52 @@ export default function Home() {
                                 </div>
                             </div>
 
-                            {/* EVENT SCROLL CONTAINER: Syncs scrolling for all runners */}
-                            <div className={`divide-y divide-slate-800 overflow-x-auto no-scrollbar scrollbar-gutter-stable ${isSuspended ? 'opacity-50 pointer-events-none' : ''}`}>
-                                {event.selections?.map((runner: any) => (
-                                    <div key={runner.id} className="flex flex-col md:flex-row md:items-center px-4 py-3 gap-3 md:gap-4 hover:bg-slate-800/30 transition-colors w-full md:min-w-[600px]">
-                                        {/* STICKY NAME COLUMN */}
-                                        <div className="w-full md:w-auto md:flex-1 md:min-w-[120px] md:sticky md:left-0 relative z-0 md:z-10 bg-[#161F32] border-b md:border-b-0 md:border-r border-slate-800/50 pb-2 md:pb-0 pr-0 md:pr-4">
-                                            <div className="flex items-center gap-2">
-                                                <span className="text-white font-medium text-lg block leading-tight">
-                                                    {runner.name}
-                                                </span>
-                                                
-                                                {/* BADGE LOGIC */}
-                                                {(() => {
-                                                    const sigData = steamerSignals.get(runner.name);
-                                                    if (!sigData) return null;
-
-                                                    const now = Date.now();
-                                                    const start = new Date(event.start_time).getTime();
-                                                    const minsUntilStart = (start - now) / 60000;
+                            {/* PRICE SECTION: HYBRID STACK UI */}
+                                            <div className="w-full md:w-auto mt-2 md:mt-0">
+                                                <div className={`flex items-center gap-1.5 md:gap-3 ${isPaywalled ? 'blur-sm select-none opacity-40 pointer-events-none' : ''}`}>
                                                     
-                                                    if (minsUntilStart < 10) return null;
-
-                                                    // ✅ TEST MODE: 0 Volume requirement
-                                                    const minVol = STEAMER_TEST_MODE ? 0 : 200;
-                                                    if ((event.volume || 0) < minVol) return null;
-
-                                                    const isSteam = sigData.label === 'STEAMER';
-                                                    const arrow = isSteam ? '↑' : '↓';
-                                                    const pct = Math.abs(sigData.pct * 100).toFixed(1);
-                                                    
-                                                    const baseStyle = "text-[9px] font-bold px-1.5 py-0.5 " +
-                                                                    "rounded border flex items-center gap-1";
-                                                    
-                                                    const colorStyle = isSteam
-                                                        ? "bg-blue-500/20 text-blue-300 border-blue-500/30"
-                                                        : "bg-pink-500/20 text-pink-300 border-pink-500/30";
-
-                                                    return (
-                                                        <span className={`${baseStyle} ${colorStyle}`}>
-                                                            <span>STEAM {arrow}</span>
-                                                            <span className="opacity-80">|</span>
-                                                            <span>{pct}%</span>
-                                                        </span>
-                                                    );
-                                                })()}
-                                            </div>
-
-                                            {/* VALUE CALC: Best Book vs Exchange Mid (Gated >5% Spread) */}
-                                            {(() => {
-                                                const { back, lay } = runner.exchange;
-                                                
-                                                // GATE 1: Strict Liquidity (Must have both Back & Lay)
-                                                if (!back || back <= 1.0 || !lay || lay <= 1.0) return null;
-
-                                                const mid = (back + lay) / 2;
-                                                const spreadPct = ((lay - back) / mid) * 100;
-
-                                                // GATE 2: Max 5% Spread Allowed
-                                                if (spreadPct > 5.0) return null;
-
-                                                const books = [
-                                                    { label: 'Pin', p: runner.bookmakers.pinnacle },
-                                                    { label: 'Lad', p: runner.bookmakers.ladbrokes },
-                                                    { label: 'PP', p: runner.bookmakers.paddypower }
-                                                ];
-                                                
-                                                // Find best book (Max price > 1.0)
-                                                const best = books.reduce((acc, curr) => (curr.p > 1.0 && curr.p > acc.p) ? curr : acc, { label: '', p: 0 });
-                                                
-                                                if (best.p <= 1.0) return null;
-
-                                                const diff = ((best.p / mid) - 1) * 100;
-                                                const sign = diff > 0 ? '+' : '';
-                                                const diffColor = diff > 0 ? 'text-green-400' : 'text-slate-500';
-
-                                                return (
-                                                    <div className="text-[10px] text-slate-500 mt-1 font-mono leading-none">
-                                                        Best: <span className="text-slate-300 font-bold">{best.label} {best.p.toFixed(2)}</span> <span className={diffColor}>({sign}{diff.toFixed(1)}% vs mid)</span>
-                                                    </div>
-                                                );
-                                            })()}
-                                        </div>
-
-                                            {/* PRICE SECTION: CUPERTINO FINANCE UI */}
-                                            <div className="w-full mt-3">
-                                                {/* THE UNIFIED STRIP */}
-                                                <div className={`flex items-stretch h-[56px] gap-1 ${isPaywalled ? 'blur-sm select-none opacity-40 pointer-events-none' : ''}`}>
-                                                    
-                                                    {/* MODULE 1: THE EXCHANGE (Split Vertical Stack) */}
-                                                    <div className="w-[60px] md:w-[70px] flex flex-col gap-[1px] flex-shrink-0">
-                                                        {/* LAY (Top - The Benchmark) */}
-                                                        <div className="flex-1 flex flex-col justify-center items-center bg-[#351520] rounded-t-md">
-                                                            <span className="text-[8px] text-pink-400 font-bold leading-none mb-0.5">LAY</span>
-                                                            <span className="text-sm font-mono font-bold text-pink-200 leading-none">
-                                                                {formatPrice(runner.exchange.lay)}
-                                                            </span>
+                                                    {/* MODULE 1: THE EXCHANGE */}
+                                                    {/* Mobile: Split Stack (Lay Top/Back Bottom) | Desktop: Side-by-Side */}
+                                                    <div className="flex md:gap-2 mr-1 flex-shrink-0">
+                                                        
+                                                        {/* DESKTOP LAYOUT (Hidden on Mobile) */}
+                                                        <div className="hidden md:flex gap-2">
+                                                            <div className="w-[70px] h-[50px] rounded-lg bg-[#0f172a] border border-blue-500/30 flex flex-col justify-center items-center">
+                                                                <span className="text-[9px] text-blue-500 font-bold uppercase">Back</span>
+                                                                <span className="text-lg font-mono font-bold text-blue-400 leading-none">{formatPrice(runner.exchange.back)}</span>
+                                                            </div>
+                                                            <div className="w-[70px] h-[50px] rounded-lg bg-[#0f172a] border border-pink-500/30 flex flex-col justify-center items-center">
+                                                                <span className="text-[9px] text-pink-500 font-bold uppercase">Lay</span>
+                                                                <span className="text-lg font-mono font-bold text-pink-400 leading-none">{formatPrice(runner.exchange.lay)}</span>
+                                                            </div>
                                                         </div>
-                                                        {/* BACK (Bottom - The Support) */}
-                                                        <div className="flex-1 flex flex-col justify-center items-center bg-[#0f1f38] rounded-b-md">
-                                                            <span className="text-[8px] text-blue-400 font-bold leading-none mb-0.5">BACK</span>
-                                                            <span className="text-sm font-mono font-bold text-blue-200 leading-none">
-                                                                {formatPrice(runner.exchange.back)}
-                                                            </span>
+
+                                                        {/* MOBILE LAYOUT (Hidden on Desktop) */}
+                                                        {/* A single 52px chip split horizontally */}
+                                                        <div className="md:hidden w-[60px] h-[52px] rounded-lg overflow-hidden flex flex-col border border-slate-700/50 shadow-sm">
+                                                            {/* Top: LAY (Pink) */}
+                                                            <div className="flex-1 bg-[#351520] flex items-center justify-center gap-1 border-b border-white/5">
+                                                                <span className="text-[11px] font-mono font-bold text-pink-200 leading-none">{formatPrice(runner.exchange.lay)}</span>
+                                                            </div>
+                                                            {/* Bottom: BACK (Blue) */}
+                                                            <div className="flex-1 bg-[#0f1f38] flex items-center justify-center gap-1">
+                                                                <span className="text-[11px] font-mono font-bold text-blue-200 leading-none">{formatPrice(runner.exchange.back)}</span>
+                                                            </div>
                                                         </div>
                                                     </div>
 
-                                                    {/* MODULE 2: THE MARKET (Bookies - Uniform Tiles) */}
-                                                    {/* These flex-1 so they fill the width perfectly evenly */}
+                                                    {/* DIVIDER (Desktop Only) */}
+                                                    <div className="hidden md:block w-px h-8 bg-slate-700/50 mr-1"></div>
+                                                
+                                                    {/* MODULE 2: BOOKMAKERS (Uniform Glass Chips) */}
+                                                    {/* Flex-1 on mobile to fill width evenly, Fixed width on Desktop */}
                                                     
                                                     {/* PINNACLE */}
-                                                    <div className="flex-1 group relative rounded-md bg-[#2c2c2e] hover:bg-[#3a3a3c] transition-colors flex flex-col justify-center items-center cursor-default border-t border-white/5">
-                                                        {/* Apple Style Label: Tiny, Uppercase, Secondary Color */}
-                                                        <span className="text-[9px] text-orange-400 font-bold tracking-wider mb-1">PIN</span>
-                                                        <span className="text-lg font-mono font-medium text-white tracking-tight leading-none">
+                                                    <div className="flex-1 md:flex-none md:w-[70px] h-[52px] md:h-[50px] rounded-lg flex flex-col justify-center items-center cursor-default 
+                                                        bg-gradient-to-b from-[#ff8c00] to-[#e65100] 
+                                                        border-t border-white/20 shadow-lg shadow-orange-900/10">
+                                                        <span className="text-[8px] text-orange-100 font-bold uppercase mb-0.5 opacity-90">Pin</span>
+                                                        <span className="text-lg font-mono font-bold text-white leading-none drop-shadow-sm">
                                                             {formatPrice(runner.bookmakers.pinnacle)}
                                                         </span>
                                                     </div>
@@ -556,12 +488,17 @@ export default function Home() {
                                                     {(() => {
                                                         const isWilliamHill = activeSport === 'MMA';
                                                         return (
-                                                            <div className="flex-1 group relative rounded-md bg-[#2c2c2e] hover:bg-[#3a3a3c] transition-colors flex flex-col justify-center items-center cursor-default border-t border-white/5">
-                                                                <span className={`text-[9px] font-bold tracking-wider mb-1 
-                                                                    ${isWilliamHill ? 'text-[#FDB913]' : 'text-red-400'}`}>
-                                                                    {isWilliamHill ? 'WH' : 'LAD'}
+                                                            <div className={`flex-1 md:flex-none md:w-[70px] h-[52px] md:h-[50px] rounded-lg flex flex-col justify-center items-center cursor-default 
+                                                                border-t border-white/20 shadow-lg 
+                                                                ${isWilliamHill 
+                                                                    ? 'bg-gradient-to-b from-[#003062] to-[#00152e] shadow-blue-900/20' // WH
+                                                                    : 'bg-gradient-to-b from-[#E4002B] to-[#960018] shadow-red-900/20'   // Lad
+                                                                }`}>
+                                                                <span className={`text-[8px] font-bold uppercase mb-0.5 opacity-90 
+                                                                    ${isWilliamHill ? 'text-[#FDB913]' : 'text-white'}`}>
+                                                                    {isWilliamHill ? 'Wm Hill' : 'Lad'}
                                                                 </span>
-                                                                <span className="text-lg font-mono font-medium text-white tracking-tight leading-none">
+                                                                <span className="text-lg font-mono font-bold text-white leading-none drop-shadow-sm">
                                                                     {formatPrice(runner.bookmakers.ladbrokes)}
                                                                 </span>
                                                             </div>
@@ -569,25 +506,33 @@ export default function Home() {
                                                     })()}
 
                                                     {/* PADDY POWER */}
-                                                    <div className="flex-1 group relative rounded-md bg-[#2c2c2e] hover:bg-[#3a3a3c] transition-colors flex flex-col justify-center items-center cursor-default border-t border-white/5">
-                                                        <span className="text-[9px] text-[#D2E600] font-bold tracking-wider mb-1">PP</span>
-                                                        <span className="text-lg font-mono font-medium text-white tracking-tight leading-none">
+                                                    <div className="flex-1 md:flex-none md:w-[70px] h-[52px] md:h-[50px] rounded-lg flex flex-col justify-center items-center cursor-default 
+                                                        bg-gradient-to-b from-[#005c40] to-[#002b1e] 
+                                                        border-t border-white/20 shadow-lg shadow-green-900/10">
+                                                        <span className="text-[8px] text-[#D2E600] font-bold uppercase mb-0.5 opacity-90">Paddy</span>
+                                                        <span className="text-lg font-mono font-bold text-white leading-none drop-shadow-sm">
                                                             {formatPrice(runner.bookmakers.paddypower)}
                                                         </span>
                                                     </div>
 
                                                 </div>
                                                 
-                                                {/* PAYWALL OVERLAY (Unchanged) */}
+                                                {/* PAYWALL OVERLAY */}
                                                 {isPaywalled && (
-                                                    <div className="absolute inset-0 z-10 flex flex-col items-center justify-center">
-                                                         {/* ... existing paywall button code ... */}
+                                                    <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-slate-900/60 backdrop-blur-[2px] rounded-xl border border-white/10">
+                                                        {/* CTA Button Code */}
+                                                         <div className="flex flex-col items-center gap-1.5 p-2 transform scale-95">
+                                                            <button 
+                                                                onClick={handleUnlock}
+                                                                className="bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-bold px-4 py-2 rounded-lg shadow-xl border border-blue-400/50 transition-all flex items-center gap-2 hover:scale-105"
+                                                            >
+                                                                <Lock size={12} className="text-yellow-400" />
+                                                                Unlock
+                                                            </button>
+                                                        </div>
                                                     </div>
                                                 )}
                                             </div>
-                                    </div>
-                                ))}
-                            </div>
                         </div>
                         </div>
                     )})}
