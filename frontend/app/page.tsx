@@ -518,84 +518,81 @@ export default function Home() {
                                         </div>
 
                                         {/* PRICE SECTION: Paywall Wrapper */}
-                                        <div className="relative w-full md:w-auto">
-                                            {/* SCROLL REMOVED: Relies on parent container for sync */}
-                                            <div className={`flex flex-wrap md:flex-nowrap md:items-center gap-2 ${isPaywalled ? 'blur-sm select-none opacity-40 pointer-events-none' : ''}`}>
+{/* PRICE SECTION: Paywall Wrapper */}
+                                            <div className="relative w-full md:w-auto">
+                                                <div className={`flex flex-wrap md:flex-nowrap md:items-center gap-2.5 ${isPaywalled ? 'blur-sm select-none opacity-40 pointer-events-none' : ''}`}>
+                                                    
+                                                    {/* EXCHANGE GROUP (Unchanged but fresher spacing) */}
+                                                    <div className="flex gap-2 w-full md:w-auto md:pr-4 md:border-r md:border-slate-700/60 flex-shrink-0">
+                                                        <div className="flex-1 md:w-16 py-2 rounded-xl text-center bg-[#0B1120] border border-blue-500/30 flex flex-col justify-center h-[52px] shadow-sm">
+                                                            <span className="text-[9px] text-blue-500 font-bold uppercase mb-0.5 tracking-wider">Back</span>
+                                                            <span className="text-lg font-mono font-bold text-blue-400 leading-none">
+                                                                {formatPrice(runner.exchange.back)}
+                                                            </span>
+                                                        </div>
+                                                        <div className="flex-1 md:w-16 py-2 rounded-xl text-center bg-[#0B1120] border border-pink-500/30 flex flex-col justify-center h-[52px] shadow-sm">
+                                                            <span className="text-[9px] text-pink-500 font-bold uppercase mb-0.5 tracking-wider">Lay</span>
+                                                            <span className="text-lg font-mono font-bold text-pink-400 leading-none">
+                                                                {formatPrice(runner.exchange.lay)}
+                                                            </span>
+                                                        </div>
+                                                    </div>
                                                 
-                                                {/* EXCHANGE GROUP + DIVIDER */}
-                                                <div className="flex gap-2 w-full md:w-auto md:pr-4 md:border-r md:border-slate-700/60 flex-shrink-0">
-                                                    <div className="flex-1 md:w-16 py-2 rounded-lg text-center bg-[#0B1120] border border-blue-500/30 flex flex-col justify-center h-[52px]">
-                                                        <span className="text-[9px] text-blue-500 font-bold uppercase mb-0.5">Back</span>
-                                                        <span className="text-lg font-mono font-bold text-blue-400 leading-none">
-                                                            {formatPrice(runner.exchange.back)}
-                                                        </span>
-                                                    </div>
-                                                    <div className="flex-1 md:w-16 py-2 rounded-lg text-center bg-[#0B1120] border border-pink-500/30 flex flex-col justify-center h-[52px]">
-                                                        <span className="text-[9px] text-pink-500 font-bold uppercase mb-0.5">Lay</span>
-                                                        <span className="text-lg font-mono font-bold text-pink-400 leading-none">
-                                                            {formatPrice(runner.exchange.lay)}
-                                                        </span>
-                                                    </div>
+                                                {/* PINNACLE: Vibrant Orange Pop */}
+                                                <div className="flex-1 md:w-16 py-2 rounded-xl text-center bg-[#FF7B00] border border-[#FF9E42] flex flex-col justify-center h-[52px] flex-shrink-0 shadow-lg shadow-orange-900/20 hover:scale-105 transition-transform">
+                                                    <span className="text-[9px] text-orange-100 font-black uppercase mb-0.5 tracking-wider">Pin</span>
+                                                    <span className="text-lg font-mono font-bold text-white leading-none drop-shadow-sm">
+                                                        {formatPrice(runner.bookmakers.pinnacle)}
+                                                    </span>
                                                 </div>
-                                            
-                                            {/* PINNACLE */}
-                                            <div className="flex-1 md:w-16 py-2 rounded-lg text-center bg-[#ff7b00] border border-[#e66e00] flex flex-col justify-center h-[52px] flex-shrink-0">
-                                                <span className="text-[9px] text-orange-900 font-bold uppercase mb-0.5">Pin</span>
-                                                <span className="text-lg font-mono font-bold text-white leading-none">
-                                                    {formatPrice(runner.bookmakers.pinnacle)}
-                                                </span>
-                                            </div>
-                                            {/* LADBROKES / WILLIAM HILL DYNAMIC COLUMN */}
-                                            {(() => {
-                                                const isWilliamHill = activeSport === 'MMA';
-                                                return (
-                                                    <div className={`flex-1 md:w-16 py-2 rounded-lg text-center flex flex-col justify-center h-[52px] flex-shrink-0 
-                                                        ${isWilliamHill 
-                                                            ? 'bg-[#003062] border border-[#FDB913]'  // WH: Navy Blue + Gold Border
-                                                            : 'bg-[#4a4a4a] border border-[#3a3a3a]'  // Ladbrokes: Dark Grey
-                                                        }`}>
-                                                        
-                                                        <span className={`text-[9px] font-bold uppercase mb-0.5 
-                                                            ${isWilliamHill ? 'text-[#FDB913]' : 'text-gray-200'}`}>
-                                                            {isWilliamHill ? 'Wm Hill' : 'Ladbrokes'}
-                                                        </span>
-                                                        
-                                                        <span className="text-lg font-mono font-bold text-white leading-none">
-                                                            {formatPrice(runner.bookmakers.ladbrokes)}
-                                                        </span>
-                                                    </div>
-                                                );
-                                            })()}
-                                            {/* PADDY */}
-                                            <div className="flex-1 md:w-16 py-2 rounded-lg text-center bg-white border-2 border-[#206c48] flex flex-col justify-center h-[52px] flex-shrink-0">
-                                                <span className="text-[9px] text-[#206c48] font-bold uppercase mb-0.5">PP</span>
-                                                <span className="text-lg font-mono font-bold text-[#206c48] leading-none">
-                                                    {formatPrice(runner.bookmakers.paddypower)}
-                                                </span>
-                                            </div>
-                                            </div>
-                                            
-                                            {/* PAYWALL OVERLAY CTA */}
-                                            {isPaywalled && (
-                                                <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-black/20 backdrop-blur-[1px] rounded-lg">
-                                                    <div className="flex flex-col items-center gap-1.5 p-2">
-                                                        <button 
-                                                            onClick={handleUnlock}
-                                                            className="bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-bold px-4 py-2 rounded shadow-lg border border-blue-400/50 transition-all flex items-center gap-2"
-                                                        >
-                                                            <Lock size={12} className="text-yellow-400" />
-                                                            Unlock Today&apos;s NBA Steamers
-                                                        </button>
-                                                        <span className="text-[9px] text-slate-400 font-medium mt-1">
-                                                            Pre-match only. No live chasing.
-                                                        </span>
-                                                        <span className="text-[9px] text-slate-600 mt-0.5">
-                                                            Prices move fast. Missed lines are not replayed.
-                                                        </span>
-                                                    </div>
+
+                                                {/* LADBROKES / WILLIAM HILL (Dynamic Branding) */}
+                                                {(() => {
+                                                    const isWilliamHill = activeSport === 'MMA';
+                                                    return (
+                                                        <div className={`flex-1 md:w-16 py-2 rounded-xl text-center flex flex-col justify-center h-[52px] flex-shrink-0 shadow-lg hover:scale-105 transition-transform
+                                                            ${isWilliamHill 
+                                                                ? 'bg-[#003062] border border-[#FDB913] shadow-blue-900/30'  // WH: Navy + Gold
+                                                                : 'bg-[#E4002B] border border-[#FF4D4D] shadow-red-900/30'   // Ladbrokes: Red + White
+                                                            }`}>
+                                                            
+                                                            <span className={`text-[9px] font-black uppercase mb-0.5 tracking-wider 
+                                                                ${isWilliamHill ? 'text-[#FDB913]' : 'text-red-100'}`}>
+                                                                {isWilliamHill ? 'Wm Hill' : 'Ladbrokes'}
+                                                            </span>
+                                                            
+                                                            <span className="text-lg font-mono font-bold text-white leading-none drop-shadow-sm">
+                                                                {formatPrice(runner.bookmakers.ladbrokes)}
+                                                            </span>
+                                                        </div>
+                                                    );
+                                                })()}
+
+                                                {/* PADDY POWER: Heritage Green + Lime Pop */}
+                                                <div className="flex-1 md:w-16 py-2 rounded-xl text-center bg-[#004833] border border-[#D2E600] flex flex-col justify-center h-[52px] flex-shrink-0 shadow-lg shadow-green-900/20 hover:scale-105 transition-transform">
+                                                    <span className="text-[9px] text-[#D2E600] font-black uppercase mb-0.5 tracking-wider">Paddy</span>
+                                                    <span className="text-lg font-mono font-bold text-white leading-none drop-shadow-sm">
+                                                        {formatPrice(runner.bookmakers.paddypower)}
+                                                    </span>
                                                 </div>
-                                            )}
-                                        </div>
+
+                                                </div>
+                                                
+                                                {/* PAYWALL OVERLAY CTA (Keep existing) */}
+                                                {isPaywalled && (
+                                                    <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-slate-900/40 backdrop-blur-[2px] rounded-xl border border-white/10">
+                                                        <div className="flex flex-col items-center gap-1.5 p-2 transform scale-95">
+                                                            <button 
+                                                                onClick={handleUnlock}
+                                                                className="bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-bold px-4 py-2 rounded-lg shadow-xl border border-blue-400/50 transition-all flex items-center gap-2 hover:scale-105"
+                                                            >
+                                                                <Lock size={12} className="text-yellow-400" />
+                                                                Unlock Steamers
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
                                     </div>
                                 ))}
                             </div>
