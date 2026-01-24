@@ -517,88 +517,84 @@ export default function Home() {
                                             })()}
                                         </div>
 
-                                        {/* PRICE SECTION: TERMINAL PRO UI */}
+                                        {/* PRICE SECTION: BLOOMBERG TERMINAL UI */}
                                             <div className="relative w-full md:w-auto">
-                                                <div className={`flex flex-wrap md:flex-nowrap items-center gap-3 ${isPaywalled ? 'blur-sm select-none opacity-40 pointer-events-none' : ''}`}>
+                                                <div className={`flex items-start md:items-center gap-2 md:gap-3 ${isPaywalled ? 'blur-sm select-none opacity-40 pointer-events-none' : ''}`}>
                                                     
-                                                    {/* GROUP 1: THE BENCHMARK (Exchange) */}
-                                                    <div className="flex gap-2 mr-2">
-                                                        {/* BACK */}
-                                                        <div className="w-[70px] h-[50px] rounded-lg flex flex-col justify-center items-center bg-[#1e293b] border border-[#3b82f6]/30 shadow-inner shadow-[#3b82f6]/10">
-                                                            <span className="text-[9px] text-blue-400 font-bold uppercase tracking-widest mb-0.5">Back</span>
-                                                            <span className="text-lg font-mono font-bold text-blue-100 leading-none">
+                                                    {/* GROUP 1: THE EXCHANGE (Mobile: Stacked | Desktop: Side-by-Side) */}
+                                                    <div className="flex flex-col-reverse md:flex-row gap-1 md:gap-2 mr-1 md:mr-2 flex-shrink-0">
+                                                        {/* BACK (Blue) */}
+                                                        <div className="w-[60px] md:w-[70px] h-[26px] md:h-[50px] rounded md:rounded-lg flex flex-row md:flex-col justify-between md:justify-center items-center px-1.5 md:px-0 
+                                                            bg-[#0f172a] border border-blue-500/30 shadow-inner shadow-blue-500/10">
+                                                            <span className="text-[9px] text-blue-500 font-bold uppercase tracking-wider md:mb-0.5">Back</span>
+                                                            <span className="text-sm md:text-lg font-mono font-bold text-blue-400 leading-none">
                                                                 {formatPrice(runner.exchange.back)}
                                                             </span>
                                                         </div>
-                                                        {/* LAY */}
-                                                        <div className="w-[70px] h-[50px] rounded-lg flex flex-col justify-center items-center bg-[#1e293b] border border-[#ec4899]/30 shadow-inner shadow-[#ec4899]/10">
-                                                            <span className="text-[9px] text-pink-400 font-bold uppercase tracking-widest mb-0.5">Lay</span>
-                                                            <span className="text-lg font-mono font-bold text-pink-100 leading-none">
+                                                        {/* LAY (Pink) - On Mobile, this sits ON TOP */}
+                                                        <div className="w-[60px] md:w-[70px] h-[34px] md:h-[50px] rounded md:rounded-lg flex flex-row md:flex-col justify-between md:justify-center items-center px-1.5 md:px-0 
+                                                            bg-[#0f172a] border border-pink-500/30 shadow-inner shadow-pink-500/10 relative z-10">
+                                                            <span className="text-[9px] text-pink-500 font-bold uppercase tracking-wider md:mb-0.5">Lay</span>
+                                                            <span className="text-sm md:text-lg font-mono font-bold text-pink-400 leading-none">
                                                                 {formatPrice(runner.exchange.lay)}
                                                             </span>
                                                         </div>
                                                     </div>
 
-                                                    {/* DIVIDER */}
+                                                    {/* DIVIDER (Desktop Only) */}
                                                     <div className="hidden md:block w-px h-8 bg-slate-700/50 mr-1"></div>
                                                 
                                                     {/* GROUP 2: THE OPPORTUNITIES (Bookies) */}
-                                                    
-                                                    {/* PINNACLE: Molten Orange Glass */}
-                                                    <div className="group relative w-[70px] h-[50px] rounded-lg flex flex-col justify-center items-center 
-                                                        bg-gradient-to-b from-[#ff8c00] to-[#e65100] 
-                                                        border-t border-white/20 shadow-lg shadow-orange-900/20 
-                                                        hover:-translate-y-0.5 transition-all cursor-default">
-                                                        
-                                                        <span className="text-[8px] text-orange-100 font-bold uppercase tracking-wider mb-0.5 opacity-80 group-hover:opacity-100">Pinnacle</span>
-                                                        <span className="text-lg font-mono font-bold text-white leading-none drop-shadow-sm">
-                                                            {formatPrice(runner.bookmakers.pinnacle)}
-                                                        </span>
-                                                        
-                                                        {/* Bottom Reflection */}
-                                                        <div className="absolute bottom-0 w-full h-[2px] bg-black/20 rounded-b-lg"></div>
-                                                    </div>
+                                                    {/* On mobile, these will align with the top of the container (The Lay Price) */}
+                                                    <div className="flex flex-wrap md:flex-nowrap gap-2">
 
-                                                    {/* LADBROKES / WILLIAM HILL (Dynamic Premium Glass) */}
-                                                    {(() => {
-                                                        const isWilliamHill = activeSport === 'MMA';
-                                                        return (
-                                                            <div className={`group relative w-[70px] h-[50px] rounded-lg flex flex-col justify-center items-center 
-                                                                border-t border-white/20 shadow-lg 
-                                                                hover:-translate-y-0.5 transition-all cursor-default
-                                                                ${isWilliamHill 
-                                                                    ? 'bg-gradient-to-b from-[#004085] to-[#001f3f] shadow-blue-900/20' // WH: Navy Gradient
-                                                                    : 'bg-gradient-to-b from-[#ff4d4d] to-[#cc0000] shadow-red-900/20'   // Ladbrokes: Red Gradient
-                                                                }`}>
-                                                                
-                                                                <span className={`text-[8px] font-bold uppercase tracking-wider mb-0.5 opacity-90 group-hover:opacity-100
-                                                                    ${isWilliamHill ? 'text-[#FDB913]' : 'text-white'}`}>
-                                                                    {isWilliamHill ? 'Wm Hill' : 'Ladbrokes'}
-                                                                </span>
-                                                                
-                                                                <span className="text-lg font-mono font-bold text-white leading-none drop-shadow-sm">
-                                                                    {formatPrice(runner.bookmakers.ladbrokes)}
-                                                                </span>
+                                                        {/* PINNACLE: Molten Orange Glass */}
+                                                        <div className="group relative w-[60px] md:w-[70px] h-[50px] rounded-lg flex flex-col justify-center items-center 
+                                                            bg-gradient-to-b from-[#ff8c00] to-[#e65100] 
+                                                            border-t border-white/20 border-b border-black/30 shadow-lg shadow-orange-900/20 
+                                                            active:translate-y-[1px] transition-all cursor-default">
+                                                            
+                                                            <span className="text-[8px] text-orange-100 font-bold uppercase tracking-wider mb-0.5 opacity-80 group-hover:opacity-100">Pin</span>
+                                                            <span className="text-lg font-mono font-bold text-white leading-none drop-shadow-md">
+                                                                {formatPrice(runner.bookmakers.pinnacle)}
+                                                            </span>
+                                                        </div>
 
-                                                                {/* Bottom Reflection */}
-                                                                <div className="absolute bottom-0 w-full h-[2px] bg-black/20 rounded-b-lg"></div>
-                                                            </div>
-                                                        );
-                                                    })()}
+                                                        {/* LADBROKES / WILLIAM HILL (Dynamic Premium Glass) */}
+                                                        {(() => {
+                                                            const isWilliamHill = activeSport === 'MMA';
+                                                            return (
+                                                                <div className={`group relative w-[60px] md:w-[70px] h-[50px] rounded-lg flex flex-col justify-center items-center 
+                                                                    border-t border-white/20 border-b border-black/30 shadow-lg 
+                                                                    active:translate-y-[1px] transition-all cursor-default
+                                                                    ${isWilliamHill 
+                                                                        ? 'bg-gradient-to-b from-[#003062] to-[#00152e] shadow-blue-900/20' // WH: Deep Navy Glass
+                                                                        : 'bg-gradient-to-b from-[#E4002B] to-[#960018] shadow-red-900/20'   // Ladbrokes: Deep Red Glass
+                                                                    }`}>
+                                                                    
+                                                                    <span className={`text-[8px] font-bold uppercase tracking-wider mb-0.5 opacity-90 group-hover:opacity-100
+                                                                        ${isWilliamHill ? 'text-[#FDB913]' : 'text-white'}`}>
+                                                                        {isWilliamHill ? 'Wm Hill' : 'Lad'}
+                                                                    </span>
+                                                                    
+                                                                    <span className="text-lg font-mono font-bold text-white leading-none drop-shadow-md">
+                                                                        {formatPrice(runner.bookmakers.ladbrokes)}
+                                                                    </span>
+                                                                </div>
+                                                            );
+                                                        })()}
 
-                                                    {/* PADDY POWER: Emerald Glass */}
-                                                    <div className="group relative w-[70px] h-[50px] rounded-lg flex flex-col justify-center items-center 
-                                                        bg-gradient-to-b from-[#006400] to-[#004225] 
-                                                        border-t border-white/20 shadow-lg shadow-green-900/20 
-                                                        hover:-translate-y-0.5 transition-all cursor-default">
-                                                        
-                                                        <span className="text-[8px] text-[#D2E600] font-bold uppercase tracking-wider mb-0.5 opacity-90 group-hover:opacity-100">Paddy</span>
-                                                        <span className="text-lg font-mono font-bold text-white leading-none drop-shadow-sm">
-                                                            {formatPrice(runner.bookmakers.paddypower)}
-                                                        </span>
-                                                        
-                                                        {/* Bottom Reflection */}
-                                                        <div className="absolute bottom-0 w-full h-[2px] bg-black/20 rounded-b-lg"></div>
+                                                        {/* PADDY POWER: Emerald Glass */}
+                                                        <div className="group relative w-[60px] md:w-[70px] h-[50px] rounded-lg flex flex-col justify-center items-center 
+                                                            bg-gradient-to-b from-[#005c40] to-[#002b1e] 
+                                                            border-t border-white/20 border-b border-black/30 shadow-lg shadow-green-900/20 
+                                                            active:translate-y-[1px] transition-all cursor-default">
+                                                            
+                                                            <span className="text-[8px] text-[#D2E600] font-bold uppercase tracking-wider mb-0.5 opacity-90 group-hover:opacity-100">Paddy</span>
+                                                            <span className="text-lg font-mono font-bold text-white leading-none drop-shadow-md">
+                                                                {formatPrice(runner.bookmakers.paddypower)}
+                                                            </span>
+                                                        </div>
                                                     </div>
 
                                                 </div>
