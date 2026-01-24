@@ -70,7 +70,7 @@ last_snapshot_time = 0
 SNAPSHOT_INTERVAL = 60  # Write history every 60s
 # ---------------------------------------------------
 # --- DYNAMIC CACHING SYSTEM ---
-def fetch_cached_odds(sport_key, ttl_seconds, bookmakers=None, region='uk,eu,us'):
+def fetch_cached_odds(sport_key, ttl_seconds, bookmakers=None, region='uk,eu'):
     """
     Fetches odds with a dynamic Time-To-Live (TTL).
     High Urgency = Low TTL (Fresh Data)
