@@ -9,7 +9,6 @@ const MIN_VOLUME = 500;           // Ignore low liquidity markets
 // ⚠️ TEST MODE: 0.0001 (0.01%) - Triggers on everything
 // 🟢 PROD MODE: 0.03 (3.0%) - Triggers on real steam
 const STEAM_THRESHOLD = 0.0001;   
-
 const DRIFT_THRESHOLD = 0.03;     
 const MAX_SNAPSHOTS = 2000;       
 
