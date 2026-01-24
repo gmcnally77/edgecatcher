@@ -2,94 +2,72 @@
 import { useEffect, useCallback } from 'react';
 import { supabase } from '@/utils/supabase';
 
-// ⚡️ SIMULATION MODE: Forces badges to appear even if markets are dead static
-const SIMULATION_MODE = true; 
+// 🚨 SIMULATION OFF: Only real data passes through now.
+const SIMULATION_MODE = false; 
 
 export default function SteamersPanel({ activeSport, onSteamersChange }: any) {
   const fetchMovement = useCallback(async () => {
     // 1. Fetch Snapshots (Last 60 mins)
     const hourAgo = new Date(Date.now() - 3600000).toISOString();
     
-    // FETCH 1: Try to get history
+    // We fetch more rows to ensure we get history for all active runners
     let { data, error } = await supabase
       .from('market_snapshots')
       .select('*')
       .eq('sport', activeSport)
       .gt('ts', hourAgo)
       .order('ts', { ascending: false })
-      .limit(500);
+      .limit(1000); 
+
+    if (error || !data || data.length === 0) return;
 
     const signals = new Map();
     const groups: Record<string, any[]> = {};
-    let allRunners: string[] = [];
 
-    // 2. Process History (If exists)
-    if (data && data.length > 0) {
-        data.forEach(d => {
-            if (!groups[d.runner_name]) {
-                groups[d.runner_name] = [];
-                allRunners.push(d.runner_name);
-            }
-            groups[d.runner_name].push(d);
-        });
+    // 2. Group Data
+    data.forEach(d => {
+      if (!groups[d.runner_name]) groups[d.runner_name] = [];
+      groups[d.runner_name].push(d);
+    });
 
-        // Real Calculation Logic
-        Object.keys(groups).forEach(name => {
-            const history = groups[name];
-            if (history.length < 2) return;
+    // 3. 🛡️ CREDIBLE SIGNAL LOGIC
+    Object.keys(groups).forEach(name => {
+      const history = groups[name];
+      if (history.length < 2) return; // Need at least 2 data points
 
-            const current = history[0].mid_price;
-            const initial = history[history.length - 1].mid_price;
-            const delta = ((initial - current) / initial) * 100;
+      const latest = history[0];
+      const oldest = history[history.length - 1];
 
-            if (Math.abs(delta) >= 0.1) {
-                signals.set(name, {
-                    label: delta > 0 ? 'STEAMER' : 'DRIFTER',
-                    pct: Math.abs(delta) / 100
-                });
-            }
-        });
-    }
+      // A) Volume Filter: Ignore thin markets (< £500 traded)
+      //    False signals often come from markets with £50 matched.
+      if (latest.volume < 500) return;
 
-    // 3. 🛡️ FALLBACK: If history is empty, fetch LIVE runners for Simulation
-    // This ensures we have names to fake signals for, even if snapshots are empty.
-    if (SIMULATION_MODE && allRunners.length === 0) {
-        const { data: liveData } = await supabase
-            .from('market_feed')
-            .select('runner_name')
-            .eq('sport', activeSport)
-            .limit(50);
-            
-        if (liveData) {
-            allRunners = liveData.map(r => r.runner_name);
-        }
-    }
+      const currentPrice = latest.mid_price;
+      const initialPrice = oldest.mid_price;
+      
+      // Safety: Ignore prices < 1.01
+      if (currentPrice <= 1.01 || initialPrice <= 1.01) return;
 
-    // 4. 🧪 SIMULATION INJECTION
-    if (SIMULATION_MODE && allRunners.length > 0) {
-      // Pick 3-5 random runners to fake steam for
-      const shuffled = allRunners.sort(() => 0.5 - Math.random());
-      const selected = shuffled.slice(0, 5); 
+      // Calculate % Move
+      const delta = ((initialPrice - currentPrice) / initialPrice) * 100;
 
-      selected.forEach((name, index) => {
-        // Alternate between Steam (Green) and Drift (Red)
-        const isSteam = index % 2 === 0; 
-        const fakePct = (Math.random() * 5 + 1.5).toFixed(1); 
-
+      // B) Threshold: Must move at least 2.0% to be "Credible"
+      //    Example: 2.00 -> 1.96 is a 2% drop.
+      if (Math.abs(delta) >= 2.0) {
         signals.set(name, {
-          label: isSteam ? 'STEAMER' : 'DRIFTER',
-          pct: parseFloat(fakePct) / 100
+          label: delta > 0 ? 'STEAMER' : 'DRIFTER', // Positive delta = Price dropped (Shortened) = STEAM
+          pct: Math.abs(delta) / 100
         });
-      });
-    }
+      }
+    });
 
-    // 5. Broadcast to Parent
+    // 4. Broadcast Real Signals
     onSteamersChange(new Set(signals.keys()), signals);
   }, [activeSport, onSteamersChange]);
 
   useEffect(() => {
     fetchMovement();
-    const interval = setInterval(fetchMovement, 5000); // Fast 5s updates
+    const interval = setInterval(fetchMovement, 10000); // Check every 10s
     return () => clearInterval(interval);
   }, [fetchMovement]);
 
