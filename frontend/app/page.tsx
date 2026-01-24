@@ -437,7 +437,7 @@ export default function Home() {
             }
 
             // ============================================
-            // MODE B: SCANNER LIST (Detailed, Restored)
+            // MODE B: SCANNER LIST (Detailed, Restored & Polished)
             // ============================================
             return (
                 <div className="space-y-8">
@@ -529,16 +529,19 @@ export default function Home() {
                                                                     {valueText}
                                                                 </div>
 
-                                                                {/* PRICES */}
-                                                                <div className="flex flex-1 gap-2 items-center justify-end">
-                                                                    {/* EXCHANGE */}
-                                                                    <div className="flex gap-1 mr-4">
+                                                                {/* PRICES - STRICT GRID */}
+                                                                <div className="flex flex-1 gap-2 items-center justify-start md:justify-end overflow-hidden">
+                                                                    {/* EXCHANGE GROUP */}
+                                                                    <div className="flex gap-1 flex-none">
                                                                         <PriceBox label="BACK" price={runner.exchange.back} type="back" />
                                                                         <PriceBox label="LAY" price={runner.exchange.lay} type="lay" />
                                                                     </div>
                                                                     
-                                                                    {/* BOOKIES */}
-                                                                    <div className="flex gap-2 pl-4 border-l border-slate-700/50">
+                                                                    {/* DIVIDER */}
+                                                                    <div className="w-px h-8 bg-slate-800 mx-1 flex-none"></div>
+
+                                                                    {/* BOOKIES GROUP */}
+                                                                    <div className="flex gap-1 flex-none">
                                                                         <BookieBox 
                                                                             label="PIN" 
                                                                             price={runner.bookmakers.pinnacle} 
@@ -639,27 +642,34 @@ export default function Home() {
   );
 }
 
-// --- SUB-COMPONENTS ---
+// --- STRICT & DISCIPLINED COMPONENTS ---
 
 const PriceBox = ({ label, price, type }: any) => (
-    <div className={`w-14 h-10 rounded flex flex-col items-center justify-center border ${type === 'back' ? 'bg-[#0f172a] border-blue-500/30' : 'bg-[#1a0f14] border-pink-500/40'}`}>
-        <span className={`text-[7px] uppercase font-bold leading-none mb-0.5 ${type === 'back' ? 'text-blue-500' : 'text-pink-500'}`}>{label}</span>
+    <div className={`w-[52px] h-[44px] rounded flex flex-col items-center justify-center border flex-none ${type === 'back' ? 'bg-[#0f172a] border-blue-500/30' : 'bg-[#1a0f14] border-pink-500/40'}`}>
+        <span className={`text-[9px] font-bold leading-none mb-0.5 uppercase ${type === 'back' ? 'text-blue-500' : 'text-pink-500'}`}>{label}</span>
         <span className={`text-sm font-bold leading-none ${type === 'back' ? 'text-blue-400' : 'text-pink-400'}`}>{price ? price.toFixed(2) : '—'}</span>
     </div>
 );
 
 const BookieBox = ({ label, price, color, isBest }: any) => {
+    // 🎨 Improved Styling: Standardized widths + Glow for Best Price
     const gradients: any = {
-        orange: 'from-orange-600/20 to-orange-900/20 border-orange-500/30 text-orange-200',
-        red: 'from-red-600/20 to-red-900/20 border-red-500/30 text-red-200',
-        green: 'from-emerald-600/20 to-emerald-900/20 border-emerald-500/30 text-emerald-200',
+        orange: 'from-orange-900/40 to-orange-950/40 border-orange-500/30 text-orange-200',
+        red: 'from-red-900/40 to-red-950/40 border-red-500/30 text-red-200',
+        green: 'from-emerald-900/40 to-emerald-950/40 border-emerald-500/30 text-emerald-200',
     };
-    const style = gradients[color] || gradients.orange;
+    
+    // Highlight logic: Bright border + lighter BG, NO SCALING to prevent layout shifts
+    const activeStyle = isBest 
+        ? `border-${color === 'orange' ? 'orange' : color === 'red' ? 'red' : 'emerald'}-400 bg-white/5 shadow-[0_0_10px_rgba(255,255,255,0.1)]`
+        : 'opacity-60 grayscale-[0.5]';
+
+    const baseStyle = gradients[color] || gradients.orange;
 
     return (
-        <div className={`w-14 h-10 rounded flex flex-col items-center justify-center border transition-all ${style} ${isBest ? 'ring-1 ring-white/50 scale-105 shadow-lg z-10' : 'opacity-70 grayscale-[0.3]'}`}>
-            <span className="text-[7px] uppercase font-bold leading-none mb-0.5 opacity-70">{label}</span>
-            <span className="text-sm font-bold leading-none">{price && price > 1 ? price.toFixed(2) : '—'}</span>
+        <div className={`w-[52px] h-[44px] rounded flex flex-col items-center justify-center border transition-all flex-none bg-gradient-to-b ${baseStyle} ${activeStyle}`}>
+            <span className="text-[9px] font-bold leading-none mb-0.5 uppercase opacity-90">{label}</span>
+            <span className={`text-sm font-bold leading-none ${isBest ? 'text-white' : ''}`}>{price && price > 1 ? price.toFixed(2) : '—'}</span>
         </div>
     );
 };
