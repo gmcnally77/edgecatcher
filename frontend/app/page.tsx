@@ -545,15 +545,27 @@ export default function Home() {
                                                     {formatPrice(runner.bookmakers.pinnacle)}
                                                 </span>
                                             </div>
-                                            {/* LADBROKES */}
-                                            <div className="flex-1 md:w-16 py-2 rounded-lg text-center bg-[#4a4a4a] border border-[#3a3a3a] flex flex-col justify-center h-[52px] flex-shrink-0">
-                                            <span className="text-[9px] text-gray-200 font-bold uppercase mb-0.5">
-                                            {activeSport === 'MMA' ? 'William Hill' : 'Ladbrokes'}
-                                            </span>
-                                            <span className="text-lg font-mono font-bold text-white leading-none">
-                                                {formatPrice(runner.bookmakers.ladbrokes)}
-                                            </span>
-                                            </div>
+                                            {/* LADBROKES / WILLIAM HILL DYNAMIC COLUMN */}
+                                            {(() => {
+                                                const isWilliamHill = activeSport === 'MMA';
+                                                return (
+                                                    <div className={`flex-1 md:w-16 py-2 rounded-lg text-center flex flex-col justify-center h-[52px] flex-shrink-0 
+                                                        ${isWilliamHill 
+                                                            ? 'bg-[#003062] border border-[#FDB913]'  // WH: Navy Blue + Gold Border
+                                                            : 'bg-[#4a4a4a] border border-[#3a3a3a]'  // Ladbrokes: Dark Grey
+                                                        }`}>
+                                                        
+                                                        <span className={`text-[9px] font-bold uppercase mb-0.5 
+                                                            ${isWilliamHill ? 'text-[#FDB913]' : 'text-gray-200'}`}>
+                                                            {isWilliamHill ? 'Wm Hill' : 'Ladbrokes'}
+                                                        </span>
+                                                        
+                                                        <span className="text-lg font-mono font-bold text-white leading-none">
+                                                            {formatPrice(runner.bookmakers.ladbrokes)}
+                                                        </span>
+                                                    </div>
+                                                );
+                                            })()}
                                             {/* PADDY */}
                                             <div className="flex-1 md:w-16 py-2 rounded-lg text-center bg-white border-2 border-[#206c48] flex flex-col justify-center h-[52px] flex-shrink-0">
                                                 <span className="text-[9px] text-[#206c48] font-bold uppercase mb-0.5">PP</span>
