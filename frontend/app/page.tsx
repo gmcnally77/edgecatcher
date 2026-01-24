@@ -247,8 +247,8 @@ export default function Home() {
 
     if (!error && data) {
       const now = new Date();
-      // Relaxed heartbeat (60m)
-      const heartbeatCutoff = new Date(now.getTime() - 3600 * 1000); 
+      // Surgical heartbeat: Match backend TTL (5m buffer)
+      const heartbeatCutoff = new Date(now.getTime() - 300 * 1000); 
 
       const activeRows = data.filter((row: any) => {
         if (row.last_updated && new Date(row.last_updated) < heartbeatCutoff) return false;

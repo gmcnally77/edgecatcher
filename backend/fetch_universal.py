@@ -82,7 +82,7 @@ def fetch_cached_odds(sport_key, ttl_seconds, bookmakers=None, region='uk,eu'):
 
     # 1. Check Cache Age
     # FIX: Allow caching even for urgent/in-play requests (>= instead of >)
-    if os.path.exists(cache_file) and ttl_seconds >= TTL_INPLAY_SECONDS:
+    if os.path.exists(cache_file):
         file_age = now - os.path.getmtime(cache_file)
         if file_age < ttl_seconds:
             try:
