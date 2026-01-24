@@ -1,119 +1,54 @@
 'use client';
 import { useEffect, useState, useCallback } from 'react';
 import { supabase } from '../utils/supabase';
-import { 
-  RefreshCw, TrendingUp, Clock, Radio, Lock, Unlock, 
-  Swords, Trophy, Dribbble, AlertCircle, Copy, Check, Search,
-  Zap, Radar 
-} from 'lucide-react';
+import { TrendingUp, Swords, Trophy, Dribbble, Pin, Lock, Copy, Check } from 'lucide-react';
 import SteamersPanel from '@/components/SteamersPanel';
 
 // --- CONFIG ---
-const STEAMER_TEST_MODE = true; // ✅ ACTIVE: Shows ALL markets in Grid for UI testing
-// --------------
-
+const STEAMER_TEST_MODE = true; 
 const SPORTS = [
   { id: 'MMA', label: 'MMA', icon: <Swords size={16} /> },
   { id: 'NFL', label: 'NFL', icon: <Trophy size={16} /> },
   { id: 'Basketball', label: 'Basketball', icon: <Dribbble size={16} /> },
 ];
+// --------------
 
-// HELPER: Equality checks
-const areSetsEqual = (a: Set<string>, b: Set<string>) => 
-  a.size === b.size && [...a].every(x => b.has(x));
+// --- VISUAL COMPONENTS ---
 
-const areMapsEqual = (a: Map<string, any>, b: Map<string, any>) =>
-  a.size === b.size &&
-  [...a].every(([k, v]) => JSON.stringify(b.get(k)) === JSON.stringify(v));
+const PriceBtn = ({ label, price, type }: any) => {
+    // Desktop: Fixed Width | Mobile: Flexible
+    const bg = type === 'back' ? 'bg-[#0c1829] border-[#1e3a8a]' : 'bg-[#251016] border-[#831843]';
+    const text = type === 'back' ? 'text-blue-300' : 'text-pink-300';
+    const labelColor = type === 'back' ? 'text-blue-500' : 'text-pink-500';
 
-// HELPER: Normalize strings
-const normalizeKey = (str: string) => 
-  str ? str.toLowerCase().replace(/[^a-z0-9]/g, '') : '';
+    return (
+        <div className={`col-span-1 md:w-16 h-12 md:h-11 rounded border flex flex-col items-center justify-center transition-all ${bg}`}>
+            <span className={`text-[9px] font-bold uppercase ${labelColor}`}>{label}</span>
+            <span className={`text-sm font-bold ${text}`}>{price?.toFixed(2) || '-'}</span>
+        </div>
+    );
+};
 
-const groupData = (data: any[]) => {
-  const competitions: Record<string, any[]> = {};
+const BookieBtn = ({ label, price, color, isBest }: any) => {
+    const styles: any = {
+        orange: "from-orange-900/40 to-orange-950/40 border-orange-500/30 text-orange-200", 
+        slate: "from-slate-800/40 to-slate-900/40 border-slate-600/30 text-slate-300",    
+        emerald: "from-emerald-900/40 to-emerald-950/40 border-emerald-500/30 text-emerald-200"
+    };
 
-  data.forEach(row => {
-    const sportKey = row.sport || '';
-    const isTwoWaySport = ['NFL', 'NBA', 'Basketball', 'MMA', 'American Football', 'UFC']
-        .some(s => sportKey.includes(s));
+    // GLOW EFFECT IF BEST PRICE
+    const activeStyle = isBest 
+        ? `border-${color === 'orange' ? 'orange' : color === 'emerald' ? 'emerald' : 'slate'}-400 bg-white/5 shadow-[0_0_10px_rgba(255,255,255,0.05)]`
+        : 'opacity-80 grayscale-[0.3]';
 
-    const participants = row.event_name 
-        ? row.event_name.split(/\s+v\s+|\s+@\s+|\s+vs\.?\s+/i) 
-        : [];
+    const baseStyle = styles[color] || styles.slate;
 
-    if (isTwoWaySport && participants.length === 2) {
-        const p1 = normalizeKey(participants[0]);
-        const p2 = normalizeKey(participants[1]);
-        const runner = normalizeKey(row.runner_name);
-
-        if (runner !== p1 && runner !== p2) return; 
-    }
-
-    const compName = row.competition || 'Other';
-    if (!competitions[compName]) competitions[compName] = [];
-    
-    let market = competitions[compName].find(m => m.id === row.market_id);
-    if (!market) {
-        market = {
-            id: row.market_id,
-            name: row.event_name,
-            start_time: row.start_time,
-            volume: row.volume,
-            in_play: row.in_play,
-            market_status: row.market_status,
-            selections: []
-        };
-        competitions[compName].push(market);
-    }
-
-    market.selections.push({
-        id: row.id,
-        name: row.runner_name,
-        exchange: {
-            back: row.back_price,
-            lay: row.lay_price
-        },
-        bookmakers: {
-            pinnacle: row.price_pinnacle, 
-            ladbrokes: row.price_bet365,
-            paddypower: row.price_paddy
-        }
-    });
-  });
-
-  Object.keys(competitions).forEach(key => {
-      competitions[key].forEach(market => {
-          if (market.selections && market.selections.length > 0) {
-              market.selections.sort((a: any, b: any) => {
-                  const participants = market.name
-                    ? market.name.split(/\s+v\s+|\s+@\s+|\s+vs\.?\s+/i)
-                        .map((p: string) => normalizeKey(p))
-                    : [];
-                  
-                  const keyA = normalizeKey(a.name);
-                  const keyB = normalizeKey(b.name);
-                  const idxA = participants.indexOf(keyA);
-                  const idxB = participants.indexOf(keyB);
-
-                  if (idxA !== -1 && idxB !== -1) return idxA - idxB;
-                  if (idxA !== -1) return -1;
-                  if (idxB !== -1) return 1;
-                  return a.name.localeCompare(b.name);
-              });
-          }
-      });
-      
-      competitions[key].sort((a, b) => {
-          const timeDiff = new Date(a.start_time).getTime() - new Date(b.start_time).getTime();
-          if (timeDiff !== 0) return timeDiff;
-          const nameDiff = a.name.localeCompare(b.name);
-          if (nameDiff !== 0) return nameDiff;
-          return a.id.localeCompare(b.id);
-      });
-  });
-
-  return competitions;
+    return (
+        <div className={`col-span-1 md:w-16 h-12 md:h-11 rounded border flex flex-col items-center justify-center bg-gradient-to-b transition-all ${baseStyle} ${activeStyle}`}>
+             <span className={`text-[9px] font-bold uppercase ${isBest ? 'text-white opacity-100' : 'opacity-60'}`}>{label}</span>
+             <span className={`text-sm font-bold ${isBest ? 'text-white scale-110' : ''}`}>{price > 1 ? price.toFixed(2) : '-'}</span>
+        </div>
+    );
 };
 
 export default function Home() {
@@ -123,95 +58,41 @@ export default function Home() {
   const [steamerEvents, setSteamerEvents] = useState<Set<string>>(new Set());
   const [steamerSignals, setSteamerSignals] = useState<Map<string, any>>(new Map());
   const [loading, setLoading] = useState(true);
-  const [lastUpdated, setLastUpdated] = useState<string>('');
-  const [searchQuery, setSearchQuery] = useState('');
+  const [pinned, setPinned] = useState<Set<string>>(new Set());
   
   // PAYWALL STATE
   const [isPaid, setIsPaid] = useState(false);
-  const [trialTimeLeft, setTrialTimeLeft] = useState<string>('');
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [paymentRef, setPaymentRef] = useState('');
   const [copied, setCopied] = useState(false);
-  
+
+  // --- PINNING ---
   useEffect(() => {
-    const timer = setInterval(() => {
-        const start = typeof window !== 'undefined' ? localStorage.getItem('trial_start') : null;
-        const paidPerm = typeof window !== 'undefined' && localStorage.getItem('paid') === 'true';
-        
-        if (start && !paidPerm) {
-            const diff = (parseInt(start) + 24 * 60 * 60 * 1000) - Date.now();
-            if (diff <= 0) {
-                localStorage.removeItem('trial_start');
-                setIsPaid(false);
-                setTrialTimeLeft('');
-            } else {
-                const h = Math.floor(diff / 3600000);
-                const m = Math.floor((diff % 3600000) / 60000);
-                setTrialTimeLeft(`${h}h ${m}m remaining`);
-            }
-        } else {
-            setTrialTimeLeft('');
-        }
-    }, 1000);
-    return () => clearInterval(timer);
+    const saved = localStorage.getItem('pinned_runners');
+    if (saved) {
+        try { setPinned(new Set(JSON.parse(saved))); } catch(e) {}
+    }
+    const paid = localStorage.getItem('paid') === 'true';
+    setIsPaid(paid);
   }, []);
 
-  useEffect(() => {
-    const paidStatus = typeof window !== 'undefined' && localStorage.getItem('paid') === 'true';
-    const trialStart = typeof window !== 'undefined' ? localStorage.getItem('trial_start') : null;
-    const isTrialValid = trialStart && (Date.now() - parseInt(trialStart) < 24 * 60 * 60 * 1000);
-    setIsPaid(paidStatus || !!isTrialValid);
-    supabase.from('app_events').insert({ 
-        event: 'page_view',
-        metadata: { 
-            ua: typeof navigator !== 'undefined' ? navigator.userAgent : 'bot',
-            ref: typeof document !== 'undefined' ? document.referrer : ''
-        }
-    }).then(() => {});
-  }, []);
-
-  const handleUnlock = () => {
-    setPaymentRef(`NBA-${Math.floor(1000 + Math.random() * 9000)}`);
-    setShowPaymentModal(true);
+  const togglePin = (name: string) => {
+    const next = new Set(pinned);
+    if (next.has(name)) next.delete(name);
+    else next.add(name);
+    setPinned(next);
+    localStorage.setItem('pinned_runners', JSON.stringify([...next]));
   };
-  const handleConfirmPayment = () => {
-    localStorage.setItem('paid', 'true');
-    setIsPaid(true);
-    setShowPaymentModal(false);
-  };
-  const handleCopyLink = () => {
-    navigator.clipboard.writeText("https://revolut.me/gerardq0w5");
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-  const handleActivateTrial = () => {
-    localStorage.setItem('trial_start', Date.now().toString());
-    setIsPaid(true);
-    setShowPaymentModal(false);
-    supabase.from('app_events').insert({ event: 'trial_activated' }).then(() => {});
-  };
-
-  const SCOPE_MODE = process.env.NEXT_PUBLIC_SCOPE_MODE || "";
-  const STEAMERS_ONLY_ENABLED = (process.env.NEXT_PUBLIC_STEAMERS_ONLY || "0") === "1";
 
   const handleSteamersChange = useCallback(
     (newEvents: Set<string>, newSignals: Map<string, any>) => {
-      setSteamerEvents(prev => areSetsEqual(prev, newEvents) ? prev : newEvents);
-      setSteamerSignals(prev => areMapsEqual(prev, newSignals) ? prev : newSignals);
+      setSteamerEvents(newEvents);
+      setSteamerSignals(newSignals);
     }, 
     []
   );
 
-  const visibleSports = SCOPE_MODE.startsWith("NBA_PREMATCH_ML") 
-    ? SPORTS.filter(s => s.id === 'Basketball' || s.id === 'MMA') 
-    : SPORTS;
-
-  useEffect(() => {
-    if (SCOPE_MODE.startsWith("NBA_PREMATCH_ML") && activeSport !== 'Basketball' && activeSport !== 'MMA') {
-      setActiveSport('Basketball');
-    }
-  }, []);
-
+  // --- DATA FETCHING ---
   const fetchPrices = async () => {
     const dbCutoff = new Date();
     dbCutoff.setHours(dbCutoff.getHours() - 24); 
@@ -224,459 +105,252 @@ export default function Home() {
       .order('start_time', { ascending: true });
 
     if (!error && data) {
-      const now = new Date();
-      const heartbeatCutoff = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-
-      const activeRows = data.filter((row: any) => {
-        if (row.last_updated && new Date(row.last_updated) < heartbeatCutoff) return false;
-        if (row.market_status === 'CLOSED' || row.market_status === 'SETTLED') return false;
-        if (SCOPE_MODE.startsWith('NBA_PREMATCH_ML') && (row.in_play || new Date(row.start_time) <= now)) return false;
-        return true; 
-      });
-
-      try {
-          const grouped = groupData(activeRows);
-          setCompetitions(grouped);
-          const latestTs = activeRows.reduce((max: number, r: any) => {
-              const ts = r.last_updated ? new Date(r.last_updated).getTime() : 0;
-              return ts > max ? ts : max;
-          }, 0);
-          if (latestTs > 0) setLastUpdated(new Date(latestTs).toLocaleTimeString());
-      } catch (e) { console.error(e); }
+        const comps: Record<string, any[]> = {};
+        data.forEach((row: any) => {
+            if (row.market_status === 'CLOSED') return;
+            const comp = row.competition || 'Other';
+            if (!comps[comp]) comps[comp] = [];
+            
+            let market = comps[comp].find(m => m.id === row.market_id);
+            if (!market) {
+                market = { 
+                    id: row.market_id, name: row.event_name, start_time: row.start_time, 
+                    volume: row.volume, in_play: row.in_play, selections: [] 
+                };
+                comps[comp].push(market);
+            }
+            market.selections.push({
+                id: row.id, name: row.runner_name,
+                exchange: { back: row.back_price, lay: row.lay_price },
+                bookmakers: { pinnacle: row.price_pinnacle, ladbrokes: row.price_bet365, paddypower: row.price_paddy }
+            });
+        });
+        setCompetitions(comps);
     }
     setLoading(false);
   };
 
   useEffect(() => {
-    setCompetitions({});
     setLoading(true);
     fetchPrices();
-    const interval = setInterval(fetchPrices, 1000); 
+    const interval = setInterval(fetchPrices, 2000); 
     return () => clearInterval(interval);
   }, [activeSport]);
 
-  const formatTime = (isoString: string) => {
-    if (!isoString) return '';
-    return new Date(isoString).toLocaleDateString('en-GB', { 
-        weekday: 'short', hour: '2-digit', minute: '2-digit' 
-    });
+  const getFilteredMarkets = () => {
+      const allMarkets: any[] = [];
+      Object.values(competitions).forEach(markets => markets.forEach(m => allMarkets.push(m)));
+      return allMarkets.filter(m => {
+          if (viewMode === 'steamers' && !STEAMER_TEST_MODE) {
+              return m.selections.some((s: any) => steamerEvents.has(s.name));
+          }
+          return true;
+      });
   };
 
-  const formatPrice = (price: number | null) => {
-      if (!price || price <= 1.0) return '—';
-      return price.toFixed(2);
+  const formatTime = (isoString: string) => {
+    if (!isoString) return '';
+    return new Date(isoString).toLocaleDateString('en-GB', { weekday: 'short', hour: '2-digit', minute: '2-digit' });
+  };
+
+  const marketsToShow = getFilteredMarkets();
+  let globalGameIndex = 0;
+
+  // --- PAYWALL HANDLERS ---
+  const handleUnlock = () => {
+    setPaymentRef(`SCAN-${Math.floor(1000 + Math.random() * 9000)}`);
+    setShowPaymentModal(true);
+  };
+  const handleConfirmPayment = () => {
+    localStorage.setItem('paid', 'true');
+    setIsPaid(true);
+    setShowPaymentModal(false);
+  };
+  const handleCopyLink = () => {
+    navigator.clipboard.writeText("https://revolut.me/gerardq0w5");
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   };
 
   return (
-    <div className="min-h-screen bg-[#0B1120] text-slate-300 font-sans selection:bg-blue-500/30 selection:text-blue-200">
+    <div className="min-h-screen bg-[#0B1120] text-slate-300 font-sans pb-20">
       
-      {/* HEADER SECTION */}
-      <div className="sticky top-0 z-50 bg-[#0B1120]/95 backdrop-blur-md border-b border-slate-800 shadow-xl">
-        <div className="max-w-7xl mx-auto px-4 pt-4 pb-2">
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-4 gap-4">
-                
-                {/* BRANDING */}
-                <div className="flex items-center gap-3">
-                    <div className="bg-gradient-to-br from-blue-600 to-blue-800 p-2.5 rounded-xl border border-blue-400/20 shadow-lg shadow-blue-900/20">
-                        <TrendingUp className="text-white" size={20} strokeWidth={3} />
-                    </div>
-                    <div className="flex flex-col">
-                        <span className="block text-xl font-bold text-white tracking-tight leading-none">
-                            EdgeScanner
-                        </span>
-                        <div className="flex items-center gap-2 mt-0.5">
-                            {/* GOLD PRO BADGE */}
-                            <span className="text-[10px] uppercase font-bold text-yellow-400 tracking-widest bg-yellow-400/10 px-1.5 rounded border border-yellow-400/20">
-                                PRO
-                            </span>
-                            {!isPaid && (
-                                <span className="text-[10px] text-slate-500 flex items-center gap-1">
-                                    <Lock size={10} /> Limited View
-                                </span>
-                            )}
-                        </div>
-                    </div>
-                </div>
-                
-                {/* CONTROLS */}
-                <div className="flex items-center gap-3 w-full md:w-auto">
-                     {/* SEGMENTED CONTROL (TOGGLE) */}
-                    <div className="flex bg-[#161F32] p-1 rounded-lg border border-slate-700/50 relative w-full md:w-auto">
-                        <button 
-                            onClick={() => setViewMode('scanner')}
-                            className={`flex-1 md:flex-none px-4 py-1.5 text-xs font-bold rounded-md transition-all flex items-center justify-center gap-1.5 ${
-                                viewMode === 'scanner' 
-                                ? 'bg-blue-600 text-white shadow-md' 
-                                : 'text-slate-500 hover:text-slate-300'
-                            }`}
-                        >
-                            <Radar size={12} className={viewMode === 'scanner' ? 'text-yellow-300' : ''} />
-                            Scanner
-                        </button>
-                        <button 
-                            onClick={() => setViewMode('steamers')}
-                            className={`flex-1 md:flex-none px-4 py-1.5 text-xs font-bold rounded-md transition-all flex items-center justify-center gap-1.5 ${
-                                viewMode === 'steamers' 
-                                ? 'bg-blue-600 text-white shadow-md' 
-                                : 'text-slate-500 hover:text-slate-300'
-                            }`}
-                        >
-                            <Zap size={12} className={viewMode === 'steamers' ? 'text-yellow-300 fill-yellow-300' : ''} />
-                            Steam Grid
-                        </button>
-                    </div>
-
-                    {/* FREE PASS STATUS */}
-                    {trialTimeLeft && (
-                        <div className="hidden md:flex flex-col items-end">
-                             <span className="text-[9px] font-bold text-emerald-400 uppercase tracking-wider">
-                                Trial Active
-                            </span>
-                             <span className="text-[10px] font-mono text-emerald-500/80">
-                                {trialTimeLeft}
-                            </span>
-                        </div>
-                    )}
-                </div>
-            </div>
-
-            {/* SPORT TABS */}
-            <div className="flex gap-6 border-b border-transparent overflow-x-auto no-scrollbar">
-                {visibleSports.map((sport) => (
-                    <button 
-                        key={sport.id} 
-                        onClick={() => setActiveSport(sport.id)} 
-                        className={`flex items-center gap-2 pb-3 text-sm font-bold transition-all border-b-2 whitespace-nowrap ${
-                            activeSport === sport.id 
-                                ? 'text-white border-blue-500' 
-                                : 'text-slate-500 border-transparent hover:text-slate-300'
-                        }`}
-                    >
-                        {sport.icon} {sport.label}
-                    </button>
-                ))}
-            </div>
-        </div>
+      {/* HEADER */}
+      <div className="sticky top-0 z-50 bg-[#0B1120]/95 backdrop-blur-md border-b border-slate-800 px-4 pt-4 pb-2">
+         <div className="flex justify-between items-center mb-4 max-w-7xl mx-auto">
+             <div className="flex items-center gap-2">
+                 <div className="bg-blue-600 p-1.5 rounded-lg"><TrendingUp size={18} className="text-white"/></div>
+                 <span className="text-lg font-bold text-white">Scanner v2</span>
+             </div>
+             <div className="flex bg-[#161F32] p-1 rounded-lg border border-slate-700">
+                <button onClick={() => setViewMode('scanner')} className={`px-3 py-1 text-xs font-bold rounded ${viewMode === 'scanner' ? 'bg-blue-600 text-white' : 'text-slate-400'}`}>Scan</button>
+                <button onClick={() => setViewMode('steamers')} className={`px-3 py-1 text-xs font-bold rounded ${viewMode === 'steamers' ? 'bg-blue-600 text-white' : 'text-slate-400'}`}>Steam</button>
+             </div>
+         </div>
+         <div className="flex gap-6 overflow-x-auto no-scrollbar border-b border-slate-800/50 max-w-7xl mx-auto">
+            {SPORTS.map(s => (
+                <button key={s.id} onClick={() => setActiveSport(s.id)} className={`pb-2 text-sm font-bold border-b-2 transition-colors ${activeSport === s.id ? 'text-white border-blue-500' : 'text-slate-500 border-transparent'}`}>
+                    {s.label}
+                </button>
+            ))}
+         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-4 py-6 space-y-6">
-        
-        <SteamersPanel 
-            activeSport={activeSport} 
-            onSteamersChange={handleSteamersChange} 
-        />
+      {/* BODY */}
+      <div className="max-w-7xl mx-auto px-3 py-4 space-y-4">
+        <SteamersPanel activeSport={activeSport} onSteamersChange={handleSteamersChange} />
 
-        {/* SEARCH BAR */}
-        <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
-            <input 
-                type="text"
-                placeholder={`Find a ${activeSport === 'MMA' ? 'fight' : 'game'}...`}
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full bg-[#161F32] border border-slate-700 rounded-lg py-3 pl-10 pr-4 text-sm text-white focus:outline-none focus:border-blue-500 transition-colors"
-            />
-        </div>
+        {loading && marketsToShow.length === 0 ? (
+            <div className="text-center py-20 text-slate-600 animate-pulse">Loading Markets...</div>
+        ) : marketsToShow.length === 0 ? (
+            <div className="text-center py-20 text-slate-600">No active markets found</div>
+        ) : (
+            marketsToShow.map((event: any) => {
+                const isPaywalled = !isPaid && globalGameIndex >= 3;
+                globalGameIndex++;
 
-        {loading && Object.keys(competitions).length === 0 && (
-            <div className="flex justify-center py-20">
-                <RefreshCw size={40} className="animate-spin text-blue-500" />
-            </div>
-        )}
-
-        {/* --- MAIN CONTENT SWITCHER --- */}
-        {(() => { 
-            let globalGameIndex = 0; 
-            const allMarkets: any[] = [];
-            
-            const filterMarkets = (markets: any[]) => markets.filter(m => 
-                m.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                m.selections.some((s: any) => s.name.toLowerCase().includes(searchQuery.toLowerCase()))
-            );
-
-            // ============================================
-            // MODE A: STEAMER GRID (Mobile Optimized)
-            // ============================================
-            if (viewMode === 'steamers') {
-                Object.values(competitions).forEach(markets => markets.forEach(m => allMarkets.push(m)));
-                
-                const steamerMarkets = allMarkets.filter((m: any) => 
-                    STEAMER_TEST_MODE 
-                        ? true 
-                        : m.selections.some((s: any) => steamerEvents.has(s.name))
-                );
-
-                const marketsToShow = filterMarkets(steamerMarkets);
-
-                if (marketsToShow.length === 0) {
-                    return (
-                        <div className="flex flex-col items-center justify-center py-24 opacity-50">
-                            <Zap size={48} className="mb-4 text-slate-700" />
-                            <p className="text-slate-500 font-mono text-xs">NO STEAM DETECTED</p>
-                        </div>
-                    );
-                }
+                const sortedRunners = [...event.selections].sort((a: any, b: any) => {
+                    if (pinned.has(a.name) && !pinned.has(b.name)) return -1;
+                    if (!pinned.has(a.name) && pinned.has(b.name)) return 1;
+                    const sigA = steamerSignals.get(a.name);
+                    const sigB = steamerSignals.get(b.name);
+                    if (sigA && !sigB) return -1;
+                    if (!sigA && sigB) return 1;
+                    return 0;
+                });
 
                 return (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-3">
-                        {marketsToShow.map((event: any) => {
-                            const isPaywalled = !isPaid && globalGameIndex >= 3;
-                            globalGameIndex++;
-                            const isInPlay = event.in_play;
+                    <div key={event.id} className="bg-[#111827] border border-slate-800 rounded-xl overflow-hidden shadow-lg relative">
+                        <div className="bg-[#1f2937]/50 px-4 py-2 border-b border-slate-800 flex justify-between items-center">
+                            <h3 className="text-slate-200 font-bold text-xs md:text-sm truncate pr-4">{event.name}</h3>
+                            <div className="flex items-center gap-3">
+                                <span className="hidden md:inline text-[10px] text-slate-500 uppercase font-bold tracking-wider">Vol: £{event.volume?.toLocaleString()}</span>
+                                <span className="text-[10px] text-slate-500 font-mono whitespace-nowrap">
+                                    {event.in_play ? <span className="text-red-500 font-bold">● LIVE</span> : formatTime(event.start_time)}
+                                </span>
+                            </div>
+                        </div>
 
-                            return (
-                                <div key={event.id} className="bg-[#111827] border border-slate-800 rounded-lg overflow-hidden relative">
-                                    {/* --- COMPACT HEADER --- */}
-                                    <div className="bg-[#1f2937]/50 px-3 py-2 border-b border-slate-800 flex justify-between items-center">
-                                        <div className="flex flex-col min-w-0">
-                                            <h3 className="text-slate-200 font-bold text-xs truncate pr-2">{event.name}</h3>
-                                            <div className="flex items-center gap-2 text-[10px] text-slate-500 font-mono">
-                                                {isInPlay ? <span className="text-red-500 font-bold">● LIVE</span> : formatTime(event.start_time)}
-                                                <span>Vol: £{(event.volume || 0).toLocaleString()}</span>
+                        <div className={`divide-y divide-slate-800 ${isPaywalled ? 'blur-sm select-none opacity-40 pointer-events-none' : ''}`}>
+                            {sortedRunners.map((runner: any) => {
+                                const signal = steamerSignals.get(runner.name);
+                                const isPinned = pinned.has(runner.name);
+                                
+                                // BEST PRICE LOGIC
+                                const books = [
+                                    { n: 'PIN', p: runner.bookmakers.pinnacle, k: 'orange' },
+                                    { n: 'LAD', p: runner.bookmakers.ladbrokes, k: 'slate' },
+                                    { n: 'PP', p: runner.bookmakers.paddypower, k: 'emerald' }
+                                ].filter(b => b.p > 1);
+
+                                // Sort descending to find absolute best
+                                books.sort((a, b) => b.p - a.p);
+                                const bestPrice = books.length > 0 ? books[0].p : 0;
+                                const bestBookName = books.length > 0 ? books[0].n : '';
+                                
+                                // Value Calculation
+                                let diff = 0;
+                                let borderClass = "border-transparent"; // RESTORED BORDER LOGIC
+                                if (bestPrice > 1 && runner.exchange.back > 1) {
+                                    const mid = (runner.exchange.back + runner.exchange.lay) / 2;
+                                    diff = ((bestPrice / mid) - 1) * 100;
+
+                                    if (diff > 0.01) borderClass = "border-l-4 border-l-emerald-500 bg-emerald-500/5";
+                                    else if (diff >= -2.0) borderClass = "border-l-4 border-l-amber-500 bg-amber-500/5";
+                                }
+
+                                return (
+                                    <div key={runner.id} className={`p-3 md:px-4 md:py-3 flex flex-col md:flex-row md:items-center justify-between gap-3 ${borderClass}`}>
+                                        
+                                        {/* LEFT: INFO */}
+                                        <div className="md:w-1/3">
+                                            <div className="flex items-center gap-2 mb-1">
+                                                <span className={`font-bold text-sm ${signal ? 'text-emerald-400' : 'text-slate-200'}`}>
+                                                    {runner.name}
+                                                </span>
+                                                <button onClick={() => togglePin(runner.name)} className="opacity-50 hover:opacity-100 transition-opacity p-1">
+                                                    <Pin size={12} className={isPinned ? "fill-blue-500 text-blue-500" : "text-slate-600"} />
+                                                </button>
+                                                {signal && (
+                                                    <span className="text-[10px] bg-emerald-500/10 text-emerald-400 px-1.5 rounded border border-emerald-500/20 font-mono flex items-center gap-1">
+                                                        <TrendingUp size={10} /> {Math.abs(signal.pct * 100).toFixed(1)}%
+                                                    </span>
+                                                )}
+                                            </div>
+
+                                            {/* BEST PRICE TEXT */}
+                                            {bestPrice > 0 && (
+                                                <div className="text-[10px] font-mono flex items-center gap-1.5">
+                                                    <span className="text-slate-500">Best:</span>
+                                                    <span className="text-slate-300 font-bold">{bestBookName} {bestPrice.toFixed(2)}</span>
+                                                    <span className={diff > 0 ? "text-emerald-500" : "text-slate-500"}>
+                                                        ({diff > 0 ? '+' : ''}{diff.toFixed(1)}%)
+                                                    </span>
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {/* RIGHT: PRICES (Responsive Switch) */}
+                                        <div className="w-full md:w-auto">
+                                            {/* GRID: 5 Cols Mobile, Flex Row Desktop */}
+                                            <div className="grid grid-cols-5 md:flex gap-1.5 md:gap-2">
+                                                
+                                                {/* EXCHANGE GROUP */}
+                                                <PriceBtn label="BACK" price={runner.exchange.back} type="back" />
+                                                <PriceBtn label="LAY" price={runner.exchange.lay} type="lay" />
+                                                
+                                                {/* DIVIDER (Desktop Only) */}
+                                                <div className="hidden md:block w-px bg-slate-800 mx-1"></div>
+
+                                                {/* BOOKIES GROUP */}
+                                                <BookieBtn label="PIN" price={runner.bookmakers.pinnacle} color="orange" isBest={bestBookName === 'PIN'} />
+                                                <BookieBtn label="LAD" price={runner.bookmakers.ladbrokes} color="slate" isBest={bestBookName === 'LAD'} />
+                                                <BookieBtn label="PP" price={runner.bookmakers.paddypower} color="emerald" isBest={bestBookName === 'PP'} />
                                             </div>
                                         </div>
                                     </div>
-
-                                    {/* --- RUNNERS (Mobile: Stacked | Desktop: Row) --- */}
-                                    <div className={`p-3 space-y-3 ${isPaywalled ? 'blur-sm select-none opacity-40 pointer-events-none' : ''}`}>
-                                        {event.selections?.map((runner: any) => {
-                                            const signal = steamerSignals.get(runner.name);
-                                            
-                                            return (
-                                                <div key={runner.id} className="flex flex-col md:flex-row md:items-center justify-between gap-2 md:gap-4">
-                                                    
-                                                    {/* Name + Signal Section */}
-                                                    <div className="flex items-center justify-between md:block md:w-1/2">
-                                                        <div className="flex flex-col">
-                                                            <span className={`font-bold text-sm ${signal ? 'text-emerald-400' : 'text-slate-300'}`}>
-                                                                {runner.name}
-                                                            </span>
-                                                            {signal && (
-                                                                <span className="text-[10px] text-emerald-500/80 font-mono flex items-center gap-1">
-                                                                    <TrendingUp size={10} /> 
-                                                                    {(signal.pct * 100).toFixed(1)}% ({signal.startPrice.toFixed(2)} → {signal.endPrice.toFixed(2)})
-                                                                </span>
-                                                            )}
-                                                        </div>
-                                                        {/* Mobile Signal Badge (Visible only on small screens) */}
-                                                        {signal && <span className="md:hidden text-[9px] bg-emerald-500/10 text-emerald-400 px-1.5 py-0.5 rounded border border-emerald-500/20">STEAM</span>}
-                                                    </div>
-
-                                                    {/* Buttons Section - Full Width Mobile, Fixed Right Desktop */}
-                                                    <div className="flex gap-2 w-full md:w-auto">
-                                                        <PriceBox label="BACK" price={runner.exchange.back} type="back" />
-                                                        <PriceBox label="LAY" price={runner.exchange.lay} type="lay" />
-                                                    </div>
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
-                                    {isPaywalled && <PaywallOverlay onUnlock={handleUnlock} />}
-                                </div>
-                            );
-                        })}
+                                );
+                            })}
+                        </div>
+                        {isPaywalled && (
+                            <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-slate-900/60 backdrop-blur-[2px]">
+                                <button onClick={handleUnlock} className="bg-blue-600 text-white text-[10px] font-bold px-4 py-2 rounded-lg flex items-center gap-2">
+                                    <Lock size={12} className="text-yellow-400" /> Unlock
+                                </button>
+                            </div>
+                        )}
                     </div>
                 );
-            }
-
-            // ============================================
-            // MODE B: SCANNER LIST (Detailed, Restored & Polished)
-            // ============================================
-            return (
-                <div className="space-y-8">
-                    {Object.entries(competitions).map(([compName, markets]) => {
-                        const filtered = filterMarkets(markets);
-                        if (filtered.length === 0) return null;
-
-                        return (
-                            <div key={compName}>
-                                <h2 className="text-white font-bold text-lg mb-4 flex items-center gap-2">
-                                    <span className="w-1 h-6 bg-blue-500 rounded-full"></span> {compName}
-                                </h2>
-                                <div className="space-y-4">
-                                    {filtered.map((event: any) => {
-                                        const isPaywalled = !isPaid && globalGameIndex >= 3;
-                                        globalGameIndex++;
-                                        
-                                        const isSuspended = event.market_status === 'SUSPENDED';
-                                        const isInPlay = event.in_play;
-                                        let borderClass = 'border-slate-700/50';
-                                        if (isSuspended) borderClass = 'border-yellow-500/50';
-                                        else if (isInPlay) borderClass = 'border-red-500/50';
-
-                                        return (
-                                            <div key={event.id} className={`bg-[#161F32] border ${borderClass} rounded-xl overflow-hidden relative`}>
-                                                <div className="bg-[#0f1522] px-4 py-3 border-b border-slate-800 flex justify-between items-center">
-                                                    <h3 className="text-slate-200 font-bold text-sm">{event.name}</h3>
-                                                    <div className="flex gap-2 text-xs text-slate-500">
-                                                        {isInPlay ? <span className="text-red-500 font-bold">LIVE</span> : formatTime(event.start_time)}
-                                                    </div>
-                                                </div>
-                                                
-                                                <div className={`divide-y divide-slate-800 ${isPaywalled ? 'blur-sm select-none opacity-40 pointer-events-none' : ''}`}>
-                                                    {event.selections?.map((runner: any) => {
-                                                        const signal = steamerSignals.get(runner.name);
-                                                        
-                                                        // RESTORED VALUE LOGIC
-                                                        let selectionBorder = "border-transparent";
-                                                        let bestBookPrice = 0;
-                                                        let bestBookName = "";
-                                                        let valueText = null;
-
-                                                        if (runner.exchange.back > 1.0 && runner.exchange.lay > 1.0) {
-                                                            const mid = (runner.exchange.back + runner.exchange.lay) / 2;
-                                                            
-                                                            const books = [
-                                                                { name: 'Pin', p: runner.bookmakers.pinnacle },
-                                                                { name: activeSport === 'MMA' ? 'WH' : 'Lad', p: runner.bookmakers.ladbrokes },
-                                                                { name: 'PP', p: runner.bookmakers.paddypower }
-                                                            ];
-
-                                                            // Find best bookie
-                                                            const best = books.reduce((acc, curr) => (curr.p > 1.0 && curr.p > acc.p) ? curr : acc, { name: '', p: 0 });
-                                                            bestBookPrice = best.p;
-                                                            bestBookName = best.name;
-
-                                                            if (bestBookPrice > 1.0) {
-                                                                const diff = ((bestBookPrice / mid) - 1) * 100;
-                                                                
-                                                                // Restore Value Text & Styling
-                                                                if (diff > -5.0) { 
-                                                                     const sign = diff > 0 ? '+' : '';
-                                                                     const color = diff > 0 ? 'text-green-400' : 'text-slate-500';
-                                                                     valueText = (
-                                                                         <span className="text-[10px] text-slate-500 mt-1 font-mono block">
-                                                                             Best: <span className="text-slate-300 font-bold">{bestBookName} {bestBookPrice.toFixed(2)}</span> <span className={color}>({sign}{diff.toFixed(1)}%)</span>
-                                                                         </span>
-                                                                     );
-                                                                }
-
-                                                                if (diff > 0.01) selectionBorder = "border-l-4 border-l-emerald-500 bg-emerald-500/5";
-                                                                else if (diff >= -0.01) selectionBorder = "border-l-4 border-l-amber-500 bg-amber-500/5";
-                                                            }
-                                                        }
-
-                                                        return (
-                                                            <div key={runner.id} className={`flex flex-col md:flex-row md:items-center px-4 py-3 gap-3 ${selectionBorder}`}>
-                                                                {/* NAME + SIGNAL */}
-                                                                <div className="md:w-1/3 flex flex-col justify-center">
-                                                                    <div className="flex items-center gap-2">
-                                                                        <span className="text-white font-medium">{runner.name}</span>
-                                                                        {signal && (
-                                                                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${signal.label === 'STEAMER' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'}`}>
-                                                                                {signal.label}
-                                                                            </span>
-                                                                        )}
-                                                                    </div>
-                                                                    {/* RESTORED VALUE TEXT */}
-                                                                    {valueText}
-                                                                </div>
-
-                                                                {/* PRICES - STRICT GRID */}
-                                                                <div className="flex flex-1 gap-2 items-center justify-start md:justify-end overflow-hidden">
-                                                                    {/* EXCHANGE GROUP */}
-                                                                    <div className="flex gap-1 flex-none">
-                                                                        <PriceBox label="BACK" price={runner.exchange.back} type="back" />
-                                                                        <PriceBox label="LAY" price={runner.exchange.lay} type="lay" />
-                                                                    </div>
-                                                                    
-                                                                    {/* DIVIDER */}
-                                                                    <div className="w-px h-8 bg-slate-800 mx-1 flex-none"></div>
-
-                                                                    {/* BOOKIES GROUP */}
-                                                                    <div className="flex gap-1 flex-none">
-                                                                        <BookieBox 
-                                                                            label="PIN" 
-                                                                            price={runner.bookmakers.pinnacle} 
-                                                                            color="orange" 
-                                                                            isBest={bestBookName === 'Pin'}
-                                                                        />
-                                                                        <BookieBox 
-                                                                            label={activeSport === 'MMA' ? "WH" : "LAD"} 
-                                                                            price={runner.bookmakers.ladbrokes} 
-                                                                            color="red" 
-                                                                            isBest={bestBookName === (activeSport === 'MMA' ? "WH" : "Lad")}
-                                                                        />
-                                                                        <BookieBox 
-                                                                            label="PP" 
-                                                                            price={runner.bookmakers.paddypower} 
-                                                                            color="green" 
-                                                                            isBest={bestBookName === 'PP'}
-                                                                        />
-                                                                    </div>
-                                                                </div>
-                                                            </div>
-                                                        );
-                                                    })}
-                                                </div>
-                                                {isPaywalled && <PaywallOverlay onUnlock={handleUnlock} />}
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-                            </div>
-                        );
-                    })}
-                </div>
-            );
-        })()}
-        
-        {/* EMPTY STATE */}
-        {Object.keys(competitions).length === 0 && !loading && (
-            <div className="flex flex-col items-center justify-center py-24 text-slate-600">
-                <AlertCircle size={48} className="mb-4 opacity-20" />
-                <p className="text-lg font-medium">No active markets found for {activeSport}</p>
-            </div>
+            })
         )}
       </div>
 
       {/* PAYMENT MODAL (UNCHANGED) */}
       {showPaymentModal && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-            <div className="bg-[#161F32] border border-blue-500/30 rounded-xl p-6 max-w-sm w-full shadow-2xl space-y-5 relative">
+            <div className="bg-[#161F32] border border-blue-500/30 rounded-xl p-6 max-w-sm w-full shadow-2xl space-y-5">
                 <div className="text-center space-y-1">
-                    <h3 className="text-white font-bold text-lg leading-tight">Unlock Full Scanner</h3>
+                    <h3 className="text-white font-bold text-lg">Unlock Full Scanner</h3>
                     <p className="text-blue-400 font-mono font-bold text-lg">£5 / week</p>
                 </div>
-                <button 
-                    onClick={handleActivateTrial}
-                    className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 rounded-lg shadow-lg border border-emerald-400/50 flex flex-col items-center justify-center gap-0.5 transition-all group"
-                >
-                    <span className="text-sm group-hover:scale-105 transition-transform">ACTIVATE 24H FREE PASS</span>
-                    <span className="text-[10px] opacity-90 font-medium text-emerald-100">No payment needed. Instant access.</span>
-                </button>
-                <div className="flex items-center justify-center gap-2 py-1 opacity-60">
-                    <div className="h-px bg-slate-700 w-8"></div>
-                    <span className="text-[9px] uppercase text-slate-500 font-bold">OR PAY FOR LIFETIME</span>
-                    <div className="h-px bg-slate-700 w-8"></div>
-                </div>
-                <div className="bg-[#0B1120] p-4 rounded-lg text-sm text-slate-300 space-y-3 border border-slate-800 opacity-80 hover:opacity-100 transition-opacity">
+                <div className="bg-[#0B1120] p-4 rounded-lg text-sm text-slate-300 space-y-3 border border-slate-800">
                     <div className="leading-relaxed">
-                        <span className="font-bold text-white block mb-1">1) Pay £5 on Revolut:</span>
+                        <span className="font-bold text-white block mb-1">Pay on Revolut:</span>
                         <div className="mb-2 bg-black/30 border border-slate-700/50 rounded px-2 py-1 inline-block">
-                            <span className="text-xs text-slate-400 mr-2">Payment Ref:</span>
+                            <span className="text-xs text-slate-400 mr-2">Ref:</span>
                             <span className="font-mono font-bold text-white select-all">{paymentRef}</span>
                         </div>
-                        <div className="flex items-center gap-2 flex-wrap">
-                            <a href="https://revolut.me/gerardq0w5" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300 hover:underline break-all font-mono">
-                                revolut.me/gerardq0w5
-                            </a>
-                            <button onClick={handleCopyLink} className="bg-slate-700 hover:bg-slate-600 text-white text-[10px] font-bold px-2 py-1 rounded flex items-center gap-1 transition-all min-w-[60px] justify-center">
+                        <div className="flex items-center gap-2">
+                            <a href="https://revolut.me/gerardq0w5" target="_blank" rel="noopener noreferrer" className="text-blue-400 font-mono text-xs">revolut.me/gerardq0w5</a>
+                            <button onClick={handleCopyLink} className="bg-slate-700 text-white text-[10px] px-2 py-1 rounded">
                                 {copied ? <Check size={10} /> : <Copy size={10} />}
-                                {copied ? "Copied" : "Copy"}
                             </button>
                         </div>
                     </div>
-                    <div className="leading-relaxed">
-                        <span className="font-bold text-white block">2) Then DM @NBA_steamers</span>
-                        <a href="https://t.me/NBA_steamers" target="_blank" rel="noreferrer" className="mt-3 flex items-center justify-center w-full bg-[#229ED9] hover:bg-[#1f8rbc] text-white font-bold py-3 rounded-lg shadow-md transition-all text-xs">
-                            DM on Telegram
-                        </a>
-                    </div>
                 </div>
-                <div className="flex flex-col gap-3 pt-2">
-                    <button onClick={handleConfirmPayment} className="bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-lg w-full transition-all shadow-lg border border-blue-500/50">I’VE PAID — UNLOCK</button>
-                    <button onClick={() => setShowPaymentModal(false)} className="text-slate-500 hover:text-white font-medium text-xs py-2 uppercase tracking-wide transition-colors">Not now</button>
+                <div className="flex flex-col gap-3">
+                    <button onClick={handleConfirmPayment} className="bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-lg w-full">I’VE PAID</button>
+                    <button onClick={() => setShowPaymentModal(false)} className="text-slate-500 text-xs">Close</button>
                 </div>
             </div>
         </div>
@@ -684,60 +358,3 @@ export default function Home() {
     </div>
   );
 }
-
-// --- STRICT & DISCIPLINED COMPONENTS ---
-
-const PriceBox = ({ label, price, type }: any) => {
-    const baseClasses = "flex-1 md:w-20 h-10 md:h-12 rounded-md flex flex-col items-center justify-center border transition-all";
-    const backClasses = "bg-[#0c1829] border-[#1e3a8a] active:border-blue-400";
-    const layClasses  = "bg-[#251016] border-[#831843] active:border-pink-400";
-    
-    const labelColor = type === 'back' ? 'text-blue-400' : 'text-pink-400';
-    const priceColor = type === 'back' ? 'text-blue-300' : 'text-pink-300';
-    
-    return (
-        <div className={`${baseClasses} ${type === 'back' ? backClasses : layClasses} cursor-pointer relative`}>
-            <span className={`text-[8px] md:text-[9px] font-bold uppercase tracking-wider mb-0.5 ${labelColor}`}>
-                {label}
-            </span>
-            <span className={`text-sm md:text-base font-bold leading-none ${priceColor}`}>
-                {price ? price.toFixed(2) : '—'}
-            </span>
-        </div>
-    );
-};
-
-const BookieBox = ({ label, price, color, isBest }: any) => {
-    // 🎨 Improved Styling: Standardized widths + Glow for Best Price
-    const gradients: any = {
-        orange: 'from-orange-900/40 to-orange-950/40 border-orange-500/30 text-orange-200',
-        red: 'from-red-900/40 to-red-950/40 border-red-500/30 text-red-200',
-        green: 'from-emerald-900/40 to-emerald-950/40 border-emerald-500/30 text-emerald-200',
-    };
-    
-    // Highlight logic: Bright border + lighter BG, NO SCALING to prevent layout shifts
-    const activeStyle = isBest 
-        ? `border-${color === 'orange' ? 'orange' : color === 'red' ? 'red' : 'emerald'}-400 bg-white/5 shadow-[0_0_10px_rgba(255,255,255,0.1)]`
-        : 'opacity-60 grayscale-[0.5]';
-
-    const baseStyle = gradients[color] || gradients.orange;
-
-    return (
-        <div className={`w-[52px] h-[44px] rounded flex flex-col items-center justify-center border transition-all flex-none bg-gradient-to-b ${baseStyle} ${activeStyle}`}>
-            <span className="text-[9px] font-bold leading-none mb-0.5 uppercase opacity-90">{label}</span>
-            <span className={`text-sm font-bold leading-none ${isBest ? 'text-white' : ''}`}>{price && price > 1 ? price.toFixed(2) : '—'}</span>
-        </div>
-    );
-};
-
-const PaywallOverlay = ({ onUnlock }: any) => (
-    <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-slate-900/60 backdrop-blur-[2px]">
-        <button 
-            onClick={onUnlock}
-            className="bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-bold px-4 py-2 rounded-lg shadow-xl border border-blue-400/50 flex items-center gap-2 hover:scale-105 transition-all"
-        >
-            <Lock size={12} className="text-yellow-400" />
-            Unlock
-        </button>
-    </div>
-);
