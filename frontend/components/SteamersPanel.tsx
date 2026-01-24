@@ -1,35 +1,59 @@
 'use client';
-import { useEffect } from 'react';
+import { useEffect, useCallback } from 'react';
+import { supabase } from '@/utils/supabase';
 
-// 🚨 DIAGNOSTIC MODE: NO DATABASE, JUST HARDCODED SIGNALS
+const SIMULATION_MODE = false; // Disable fake signals in component
+
 export default function SteamersPanel({ activeSport, onSteamersChange }: any) {
-  
+  const fetchMovement = useCallback(async () => {
+    const hourAgo = new Date(Date.now() - 3600000).toISOString();
+    
+    let { data, error } = await supabase
+      .from('market_snapshots')
+      .select('*')
+      .eq('sport', activeSport)
+      .gt('ts', hourAgo)
+      .order('ts', { ascending: false })
+      .limit(1000);
+
+    if (error || !data || data.length === 0) return;
+
+    const signals = new Map();
+    const groups: Record<string, any[]> = {};
+
+    data.forEach(d => {
+      if (!groups[d.runner_name]) groups[d.runner_name] = [];
+      groups[d.runner_name].push(d);
+    });
+
+    Object.keys(groups).forEach(name => {
+      const history = groups[name];
+      if (history.length < 2) return;
+
+      const latest = history[0];
+      const oldest = history[history.length - 1];
+
+      if (latest.mid_price <= 1.01 || oldest.mid_price <= 1.01) return;
+
+      const delta = ((oldest.mid_price - latest.mid_price) / oldest.mid_price) * 100;
+
+      // 1.5% Threshold for Real Money
+      if (Math.abs(delta) >= 1.5) {
+        signals.set(name, {
+          label: delta > 0 ? 'STEAMER' : 'DRIFTER',
+          pct: Math.abs(delta) / 100
+        });
+      }
+    });
+
+    onSteamersChange(new Set(signals.keys()), signals);
+  }, [activeSport, onSteamersChange]);
+
   useEffect(() => {
-    console.log("⚠️ FORCE-INJECTING STEAM SIGNALS");
-
-    const activeSignals = new Map();
-    const activeNames = new Set<string>();
-
-    // 1. Force Green Steam on Cleveland
-    const runner1 = "Cleveland Cavaliers";
-    activeSignals.set(runner1, { label: 'STEAMER', pct: 0.15 }); // 15% drop
-    activeNames.add(runner1);
-
-    // 2. Force Red Drift on Knicks
-    const runner2 = "New York Knicks";
-    activeSignals.set(runner2, { label: 'DRIFTER', pct: 0.05 }); // 5% drift
-    activeNames.add(runner2);
-
-    // 3. Broadcast immediately (and keep doing it)
-    const interval = setInterval(() => {
-        onSteamersChange(activeNames, activeSignals);
-    }, 1000);
-
-    // Run once on mount
-    onSteamersChange(activeNames, activeSignals);
-
+    fetchMovement();
+    const interval = setInterval(fetchMovement, 10000); 
     return () => clearInterval(interval);
-  }, [onSteamersChange]);
+  }, [fetchMovement]);
 
   return null;
 }
