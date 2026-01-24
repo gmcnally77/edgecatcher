@@ -395,7 +395,7 @@ export default function Home() {
             );
 
             // ============================================
-            // MODE A: STEAMER GRID (Screenshot Match)
+            // MODE A: STEAMER GRID (Mobile Optimized)
             // ============================================
             if (viewMode === 'steamers') {
                 Object.values(competitions).forEach(markets => markets.forEach(m => allMarkets.push(m)));
@@ -411,63 +411,59 @@ export default function Home() {
                 if (marketsToShow.length === 0) {
                     return (
                         <div className="flex flex-col items-center justify-center py-24 opacity-50">
-                            <Zap size={64} className="mb-4 text-slate-700" />
-                            <p className="text-slate-500 font-mono text-sm">SCANNING FOR STEAM...</p>
+                            <Zap size={48} className="mb-4 text-slate-700" />
+                            <p className="text-slate-500 font-mono text-xs">NO STEAM DETECTED</p>
                         </div>
                     );
                 }
 
                 return (
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-3">
                         {marketsToShow.map((event: any) => {
                             const isPaywalled = !isPaid && globalGameIndex >= 3;
                             globalGameIndex++;
                             const isInPlay = event.in_play;
 
                             return (
-                                <div key={event.id} className="bg-[#111827] border border-slate-800 rounded-lg overflow-hidden shadow-lg relative">
-                                    {/* --- HEADER --- */}
-                                    <div className="bg-[#1f2937]/50 px-4 py-3 border-b border-slate-800 flex justify-between items-center">
-                                        <div className="flex flex-col">
-                                            <h3 className="text-slate-100 font-bold text-sm tracking-tight">{event.name}</h3>
-                                            <span className="text-[10px] text-slate-500 font-mono mt-0.5">
-                                                {isInPlay ? <span className="text-red-500 animate-pulse">● LIVE</span> : formatTime(event.start_time)}
-                                            </span>
-                                        </div>
-                                        <div className="flex items-center gap-4">
-                                             <div className="text-right">
-                                                <span className="text-[9px] text-slate-500 uppercase block">Volume</span>
-                                                <span className="text-xs font-mono text-slate-300">£{event.volume?.toLocaleString() || '0'}</span>
-                                             </div>
+                                <div key={event.id} className="bg-[#111827] border border-slate-800 rounded-lg overflow-hidden relative">
+                                    {/* --- COMPACT HEADER --- */}
+                                    <div className="bg-[#1f2937]/50 px-3 py-2 border-b border-slate-800 flex justify-between items-center">
+                                        <div className="flex flex-col min-w-0">
+                                            <h3 className="text-slate-200 font-bold text-xs truncate pr-2">{event.name}</h3>
+                                            <div className="flex items-center gap-2 text-[10px] text-slate-500 font-mono">
+                                                {isInPlay ? <span className="text-red-500 font-bold">● LIVE</span> : formatTime(event.start_time)}
+                                                <span>Vol: £{(event.volume || 0).toLocaleString()}</span>
+                                            </div>
                                         </div>
                                     </div>
 
-                                    {/* --- RUNNERS --- */}
-                                    <div className={`p-4 space-y-4 ${isPaywalled ? 'blur-sm select-none opacity-40 pointer-events-none' : ''}`}>
+                                    {/* --- RUNNERS (Mobile: Stacked | Desktop: Row) --- */}
+                                    <div className={`p-3 space-y-3 ${isPaywalled ? 'blur-sm select-none opacity-40 pointer-events-none' : ''}`}>
                                         {event.selections?.map((runner: any) => {
                                             const signal = steamerSignals.get(runner.name);
                                             
-                                            // Calculate Visual Steam Indicator
-                                            let nameColor = "text-slate-300";
-                                            if (signal?.label === 'STEAMER') nameColor = "text-emerald-400 drop-shadow-[0_0_5px_rgba(52,211,153,0.3)]";
-
                                             return (
-                                                <div key={runner.id} className="flex items-center justify-between group">
-                                                    {/* LEFT: Name + Signal */}
-                                                    <div className="flex flex-col">
-                                                        <span className={`font-bold text-sm transition-colors ${nameColor}`}>
-                                                            {runner.name}
-                                                        </span>
-                                                        {signal && (
-                                                            <span className="text-[10px] text-emerald-500 font-mono flex items-center gap-1 mt-0.5">
-                                                                <TrendingUp size={10} /> 
-                                                                {(signal.pct * 100).toFixed(1)}% drop ({signal.startPrice.toFixed(2)} → {signal.endPrice.toFixed(2)})
+                                                <div key={runner.id} className="flex flex-col md:flex-row md:items-center justify-between gap-2 md:gap-4">
+                                                    
+                                                    {/* Name + Signal Section */}
+                                                    <div className="flex items-center justify-between md:block md:w-1/2">
+                                                        <div className="flex flex-col">
+                                                            <span className={`font-bold text-sm ${signal ? 'text-emerald-400' : 'text-slate-300'}`}>
+                                                                {runner.name}
                                                             </span>
-                                                        )}
+                                                            {signal && (
+                                                                <span className="text-[10px] text-emerald-500/80 font-mono flex items-center gap-1">
+                                                                    <TrendingUp size={10} /> 
+                                                                    {(signal.pct * 100).toFixed(1)}% ({signal.startPrice.toFixed(2)} → {signal.endPrice.toFixed(2)})
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                        {/* Mobile Signal Badge (Visible only on small screens) */}
+                                                        {signal && <span className="md:hidden text-[9px] bg-emerald-500/10 text-emerald-400 px-1.5 py-0.5 rounded border border-emerald-500/20">STEAM</span>}
                                                     </div>
 
-                                                    {/* RIGHT: Buttons */}
-                                                    <div className="flex gap-2">
+                                                    {/* Buttons Section - Full Width Mobile, Fixed Right Desktop */}
+                                                    <div className="flex gap-2 w-full md:w-auto">
                                                         <PriceBox label="BACK" price={runner.exchange.back} type="back" />
                                                         <PriceBox label="LAY" price={runner.exchange.lay} type="lay" />
                                                     </div>
@@ -692,26 +688,19 @@ export default function Home() {
 // --- STRICT & DISCIPLINED COMPONENTS ---
 
 const PriceBox = ({ label, price, type }: any) => {
-    // SCREENSHOT REPLICATION
-    // Back: Dark Blue BG, Bright Blue Border/Text
-    // Lay: Dark Red/Pink BG, Bright Pink Border/Text
-    
-    const baseClasses = "w-20 h-12 rounded-md flex flex-col items-center justify-center border transition-all";
-    const backClasses = "bg-[#0c1829] border-[#1e3a8a] hover:border-[#3b82f6] group-hover/box:bg-[#102038]";
-    const layClasses  = "bg-[#251016] border-[#831843] hover:border-[#db2777] group-hover/box:bg-[#38151f]";
+    const baseClasses = "flex-1 md:w-20 h-10 md:h-12 rounded-md flex flex-col items-center justify-center border transition-all";
+    const backClasses = "bg-[#0c1829] border-[#1e3a8a] active:border-blue-400";
+    const layClasses  = "bg-[#251016] border-[#831843] active:border-pink-400";
     
     const labelColor = type === 'back' ? 'text-blue-400' : 'text-pink-400';
     const priceColor = type === 'back' ? 'text-blue-300' : 'text-pink-300';
     
     return (
-        <div className={`${baseClasses} ${type === 'back' ? backClasses : layClasses} group/box cursor-pointer relative`}>
-             {/* Hover effect highlight */}
-            <div className={`absolute inset-0 opacity-0 group-hover/box:opacity-10 pointer-events-none ${type === 'back' ? 'bg-blue-400' : 'bg-pink-400'}`}></div>
-            
-            <span className={`text-[9px] font-bold uppercase tracking-wider mb-0.5 ${labelColor}`}>
+        <div className={`${baseClasses} ${type === 'back' ? backClasses : layClasses} cursor-pointer relative`}>
+            <span className={`text-[8px] md:text-[9px] font-bold uppercase tracking-wider mb-0.5 ${labelColor}`}>
                 {label}
             </span>
-            <span className={`text-base font-bold leading-none ${priceColor}`}>
+            <span className={`text-sm md:text-base font-bold leading-none ${priceColor}`}>
                 {price ? price.toFixed(2) : '—'}
             </span>
         </div>
