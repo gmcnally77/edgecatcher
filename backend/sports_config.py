@@ -54,6 +54,10 @@ ALIAS_MAP = {
     # MMA Specifics (Consolidated)
     "alexandervolkanovski": ["alexvolkanovski"], 
     "alexvolkanovski": ["alexandervolkanovski"],
+    "alexanderhernandez": ["alexhernandez"],
+    "alexhernandez": ["alexanderhernandez"],
+    "danhooker": ["danielhooker"],
+    "danielhooker": ["danhooker"],
     "diegolopes": ["diegolopez"],
     "diegolopez": ["diegolopes"],
     
