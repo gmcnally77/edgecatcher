@@ -97,7 +97,7 @@ def fetch_cached_odds(sport_key, ttl_seconds, bookmakers=None, region='uk,eu'):
         'regions': region,
         'markets': 'h2h',
         'oddsFormat': 'decimal',
-        'bookmakers': bookmakers or 'pinnacle,ladbrokes_uk,paddypower'
+        'bookmakers': bookmakers or 'pinnacle,williamhill,paddypower,ladbrokes_uk'
     }
 
     urgency_label = "URGENT" if ttl_seconds < 300 else "NORMAL" if ttl_seconds < 3600 else "LAZY"
@@ -400,7 +400,7 @@ def run_spy():
             pin_book = next((b for b in bookmakers if 'pinnacle' in str(b.get('key', '')).lower()), None)
             
             # Primary bookmaker selection (William Hill for MMA, Ladbrokes for Others)
-            primary_key = 'williamhill' if sport.get('use_williamhill_as_primary') else 'ladbrokes'
+            primary_key = 'william' if sport.get('use_williamhill_as_primary') else 'ladbrokes'
             ladbrokes_book = next((b for b in bookmakers if primary_key in str(b.get('key', '')).lower()), None)
             
             paddy_book = next((b for b in bookmakers if 'paddypower' in str(b.get('key', '')).lower()), None)
