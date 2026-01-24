@@ -4,7 +4,7 @@ import { supabase } from '../utils/supabase';
 import { 
   RefreshCw, TrendingUp, Clock, Radio, Lock, Unlock, 
   Swords, Trophy, Dribbble, AlertCircle, Copy, Check, Search,
-  Zap 
+  Zap, Radar 
 } from 'lucide-react';
 import SteamersPanel from '@/components/SteamersPanel';
 
@@ -303,12 +303,13 @@ export default function Home() {
                     <div className="flex bg-[#161F32] p-1 rounded-lg border border-slate-700/50 relative w-full md:w-auto">
                         <button 
                             onClick={() => setViewMode('scanner')}
-                            className={`flex-1 md:flex-none px-4 py-1.5 text-xs font-bold rounded-md transition-all ${
+                            className={`flex-1 md:flex-none px-4 py-1.5 text-xs font-bold rounded-md transition-all flex items-center justify-center gap-1.5 ${
                                 viewMode === 'scanner' 
                                 ? 'bg-blue-600 text-white shadow-md' 
                                 : 'text-slate-500 hover:text-slate-300'
                             }`}
                         >
+                            <Radar size={12} className={viewMode === 'scanner' ? 'text-cyan-300' : ''} />
                             Scanner
                         </button>
                         <button 
@@ -372,7 +373,7 @@ export default function Home() {
                 placeholder={`Find a ${activeSport === 'MMA' ? 'fight' : 'game'}...`}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full bg-[#161F32] border border-slate-700 rounded-lg py-3 pl-10 pr-4 text-sm text-white focus:outline-none focus:border-blue-500 transition-colors placeholder:text-slate-600"
+                className="w-full bg-[#161F32] border border-slate-700 rounded-lg py-3 pl-10 pr-4 text-sm text-white focus:outline-none focus:border-blue-500 transition-colors"
             />
         </div>
 
