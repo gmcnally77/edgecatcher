@@ -69,9 +69,8 @@ CALLS_THIS_SESSION = 0               # Global counter for accounting
 last_snapshot_time = 0
 SNAPSHOT_INTERVAL = 60  # Write history every 60s
 # ---------------------------------------------------
-
 # --- DYNAMIC CACHING SYSTEM ---
-def fetch_cached_odds(sport_key, ttl_seconds, region='uk,eu,us'):
+def fetch_cached_odds(sport_key, ttl_seconds, bookmakers=None, region='uk,eu,us'):
     """
     Fetches odds with a dynamic Time-To-Live (TTL).
     High Urgency = Low TTL (Fresh Data)
@@ -98,8 +97,7 @@ def fetch_cached_odds(sport_key, ttl_seconds, region='uk,eu,us'):
         'regions': region,
         'markets': 'h2h',
         'oddsFormat': 'decimal',
-        # Ladbrokes is the middle column provider (legacy field name on DB remains price_bet365)
-        'bookmakers': 'pinnacle,ladbrokes_uk,paddypower,williamhill,unibet,betfair_sb_uk,coral,betvictor'
+        'bookmakers': bookmakers or 'pinnacle,ladbrokes_uk,paddypower'
     }
 
     urgency_label = "URGENT" if ttl_seconds < 300 else "NORMAL" if ttl_seconds < 3600 else "LAZY"
@@ -341,20 +339,23 @@ def run_spy():
         if min_seconds_away == 999999 and any(r['sport'] == sport['name'] for r in active_rows):
             min_seconds_away = 7200
 
-        # 🧠 ECONOMY BUDGETING (Target: ~288 calls/day per sport)
-        # Allows for 2-3 sports on a 20k/month plan.
+        # 🧠 ECONOMY BUDGETING (Optimized for $30/20k Plan)
         if min_seconds_away == 0:
-            ttl = 60                      # Live: Standard
+            ttl = 90                      # Live: 1.5 mins
         elif min_seconds_away < 86400:    # < 24 Hours (DAY OF GAME)
-            ttl = 300                     # ⚡ Economy: 5 mins (Balance fresh vs budget)
+            ttl = 480                     # ⚡ 8 mins: Keeps both sports synced for 30 days
         else:                             # > 24 Hours (FUTURE)
-            ttl = 3600                    # 🧊 Hibernate: 1 hour updates
+            ttl = 7200                    # 🧊 Hibernate: 2 hour updates
 
         # 🔍 DEBUG: Print exactly why we are sleeping
         if min_seconds_away < 86400:
              logger.info(f"[{sport['name']}] Active Cycle (Game in {min_seconds_away/3600:.1f}h) -> TTL: {ttl}s")
 
-        data = fetch_cached_odds(sport['odds_api_key'], ttl_seconds=ttl)
+        data = fetch_cached_odds(
+            sport['odds_api_key'], 
+            ttl_seconds=ttl, 
+            bookmakers=sport.get('bookmakers')
+        )
 
         if isinstance(data, dict) and 'message' in data:
             logger.warning(f"API MESSAGE ({sport['name']}): {data['message']}")
@@ -397,7 +398,11 @@ def run_spy():
 
             bookmakers = event.get('bookmakers', []) or []
             pin_book = next((b for b in bookmakers if 'pinnacle' in str(b.get('key', '')).lower()), None)
-            ladbrokes_book = next((b for b in bookmakers if 'ladbrokes' in str(b.get('key', '')).lower()), None)
+            
+            # Primary bookmaker selection (William Hill for MMA, Ladbrokes for Others)
+            primary_key = 'williamhill' if sport.get('use_williamhill_as_primary') else 'ladbrokes'
+            ladbrokes_book = next((b for b in bookmakers if primary_key in str(b.get('key', '')).lower()), None)
+            
             paddy_book = next((b for b in bookmakers if 'paddypower' in str(b.get('key', '')).lower()), None)
 
             ref_outcomes = get_h2h(pin_book) or get_h2h(ladbrokes_book) or get_h2h(paddy_book)

@@ -17,7 +17,9 @@ SPORTS_CONFIG = [
         "name": "MMA",
         "betfair_id": "26420387",
         "odds_api_key": "mma_mixed_martial_arts",
-        "strict_mode": False  # <--- ADD THIS. Trust the Alias Map, skip the Event Name check.
+        "bookmakers": "pinnacle,williamhill,paddypower",
+        "use_williamhill_as_primary": True, # Map WH to the middle column
+        "strict_mode": False
     },
     # --- AMERICAN FOOTBALL (WORKING) ---
     {
@@ -45,7 +47,8 @@ SPORTS_CONFIG = [
         "name": "Basketball",
         "betfair_id": "7522",
         "text_query": "NBA",
-        "odds_api_key": "basketball_nba"
+        "odds_api_key": "basketball_nba",
+        "bookmakers": "pinnacle,ladbrokes_uk,paddypower"
     }
 ]
 
