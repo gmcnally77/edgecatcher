@@ -4,7 +4,7 @@ import { supabase } from '../utils/supabase';
 import { 
   RefreshCw, TrendingUp, Clock, Radio, Lock, Unlock, 
   Swords, Trophy, Dribbble, AlertCircle, Copy, Check, Search,
-  LayoutGrid, LayoutList //
+  LayoutGrid, LayoutList 
 } from 'lucide-react';
 import SteamersPanel from '@/components/SteamersPanel';
 
@@ -118,7 +118,10 @@ const groupData = (data: any[]) => {
 
 export default function Home() {
   const [activeSport, setActiveSport] = useState('Basketball');
-  const [viewMode, setViewMode] = useState<'scanner' | 'steamers'>('steamers'); // NEW: View Toggle
+  
+  // ✅ NEW: View Toggle State ('scanner' = Old View, 'steamers' = New Grid)
+  const [viewMode, setViewMode] = useState<'scanner' | 'steamers'>('scanner'); 
+
   const [competitions, setCompetitions] = useState<Record<string, any[]>>({});
   const [steamerEvents, setSteamerEvents] = useState<Set<string>>(new Set());
   const [steamerSignals, setSteamerSignals] = useState<Map<string, any>>(new Map());
@@ -282,7 +285,7 @@ export default function Home() {
                     </div>
                     <div className="flex flex-col">
                         <span className="block text-lg font-bold text-white leading-none">
-                            Steam Finder <span className="text-slate-500 text-sm ml-1">v2</span>
+                            NBA Scanner <span className="text-slate-500 text-sm ml-1">v2</span>
                         </span>
                     </div>
                     {!isPaid && (
@@ -297,18 +300,18 @@ export default function Home() {
                     {/* View Switcher */}
                     <div className="flex bg-[#161F32] p-1 rounded-lg border border-slate-700">
                         <button 
-                            onClick={() => setViewMode('steamers')}
-                            className={`p-1.5 rounded-md transition-all ${viewMode === 'steamers' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}
-                            title="Steamer Grid View"
-                        >
-                            <LayoutGrid size={16} />
-                        </button>
-                        <button 
                             onClick={() => setViewMode('scanner')}
                             className={`p-1.5 rounded-md transition-all ${viewMode === 'scanner' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}
-                            title="Scanner List View"
+                            title="Scanner View (Detailed)"
                         >
                             <LayoutList size={16} />
+                        </button>
+                        <button 
+                            onClick={() => setViewMode('steamers')}
+                            className={`p-1.5 rounded-md transition-all ${viewMode === 'steamers' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}
+                            title="Steamer Grid (Visual)"
+                        >
+                            <LayoutGrid size={16} />
                         </button>
                     </div>
 
@@ -367,22 +370,18 @@ export default function Home() {
 
         {/* --- MAIN CONTENT SWITCHER --- */}
         {(() => { 
-            // 1. Prepare Data Flattening & Filtering (Shared)
             let globalGameIndex = 0; 
             const allMarkets: any[] = [];
             
-            // If Scanner Mode -> Keep grouped by competition for headers
-            // If Steamer Mode -> Flatten for grid
-            // ... Actually, for simplicity, we can flatten for both but render headers in Scanner if we want.
-            // Let's stick to the respective logic of each view.
-
             // Common Filter Logic
             const filterMarkets = (markets: any[]) => markets.filter(m => 
                 m.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
                 m.selections.some((s: any) => s.name.toLowerCase().includes(searchQuery.toLowerCase()))
             );
 
-            // --- VIEW 1: STEAMER GRID (The New Product) ---
+            // ============================================
+            // MODE A: STEAMER GRID (Visual, Simple)
+            // ============================================
             if (viewMode === 'steamers') {
                 Object.values(competitions).forEach(markets => markets.forEach(m => allMarkets.push(m)));
                 const filtered = filterMarkets(allMarkets);
@@ -444,7 +443,9 @@ export default function Home() {
                 );
             }
 
-            // --- VIEW 2: SCANNER LIST (The Old Product - Detailed) ---
+            // ============================================
+            // MODE B: SCANNER LIST (Detailed, Old UI)
+            // ============================================
             return (
                 <div className="space-y-8">
                     {Object.entries(competitions).map(([compName, markets]) => {
@@ -479,20 +480,64 @@ export default function Home() {
                                                 <div className={`divide-y divide-slate-800 ${isPaywalled ? 'blur-sm select-none opacity-40 pointer-events-none' : ''}`}>
                                                     {event.selections?.map((runner: any) => {
                                                         const signal = steamerSignals.get(runner.name);
+                                                        
+                                                        // RESTORED VALUE LOGIC
+                                                        let selectionBorder = "border-transparent";
+                                                        let bestBookPrice = 0;
+                                                        let bestBookName = "";
+                                                        let valueText = null;
+
+                                                        if (runner.exchange.back > 1.0 && runner.exchange.lay > 1.0) {
+                                                            const mid = (runner.exchange.back + runner.exchange.lay) / 2;
+                                                            
+                                                            const books = [
+                                                                { name: 'Pin', p: runner.bookmakers.pinnacle },
+                                                                { name: activeSport === 'MMA' ? 'WH' : 'Lad', p: runner.bookmakers.ladbrokes },
+                                                                { name: 'PP', p: runner.bookmakers.paddypower }
+                                                            ];
+
+                                                            // Find best bookie
+                                                            const best = books.reduce((acc, curr) => (curr.p > 1.0 && curr.p > acc.p) ? curr : acc, { name: '', p: 0 });
+                                                            bestBookPrice = best.p;
+                                                            bestBookName = best.name;
+
+                                                            if (bestBookPrice > 1.0) {
+                                                                const diff = ((bestBookPrice / mid) - 1) * 100;
+                                                                
+                                                                // Restore Value Text & Styling
+                                                                if (diff > -5.0) { // Only show if close enough
+                                                                     const sign = diff > 0 ? '+' : '';
+                                                                     const color = diff > 0 ? 'text-green-400' : 'text-slate-500';
+                                                                     valueText = (
+                                                                         <span className="text-[10px] text-slate-500 mt-1 font-mono">
+                                                                             Best: <span className="text-slate-300 font-bold">{bestBookName} {bestBookPrice.toFixed(2)}</span> <span className={color}>({sign}{diff.toFixed(1)}%)</span>
+                                                                         </span>
+                                                                     );
+                                                                }
+
+                                                                if (diff > 0.01) selectionBorder = "border-l-4 border-l-emerald-500 bg-emerald-500/5";
+                                                                else if (diff >= -0.01) selectionBorder = "border-l-4 border-l-amber-500 bg-amber-500/5";
+                                                            }
+                                                        }
+
                                                         return (
-                                                            <div key={runner.id} className="flex flex-col md:flex-row md:items-center px-4 py-3 gap-3">
+                                                            <div key={runner.id} className={`flex flex-col md:flex-row md:items-center px-4 py-3 gap-3 ${selectionBorder}`}>
                                                                 {/* NAME + SIGNAL */}
-                                                                <div className="md:w-1/3 flex items-center gap-2">
-                                                                    <span className="text-white font-medium">{runner.name}</span>
-                                                                    {signal && (
-                                                                        <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${signal.label === 'STEAM' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'}`}>
-                                                                            {signal.label}
-                                                                        </span>
-                                                                    )}
+                                                                <div className="md:w-1/3 flex flex-col justify-center">
+                                                                    <div className="flex items-center gap-2">
+                                                                        <span className="text-white font-medium">{runner.name}</span>
+                                                                        {signal && (
+                                                                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${signal.label === 'STEAM' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'}`}>
+                                                                                {signal.label}
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
+                                                                    {/* RESTORED VALUE TEXT */}
+                                                                    {valueText}
                                                                 </div>
 
                                                                 {/* PRICES */}
-                                                                <div className="flex flex-1 gap-2 overflow-x-auto">
+                                                                <div className="flex flex-1 gap-2 overflow-x-auto items-center">
                                                                     {/* EXCHANGE */}
                                                                     <div className="flex gap-1 mr-4">
                                                                         <PriceBox label="BACK" price={runner.exchange.back} type="back" />
@@ -501,9 +546,24 @@ export default function Home() {
                                                                     
                                                                     {/* BOOKIES */}
                                                                     <div className="flex gap-2 pl-4 border-l border-slate-700/50">
-                                                                        <BookieBox label="PIN" price={runner.bookmakers.pinnacle} color="orange" />
-                                                                        <BookieBox label={activeSport === 'MMA' ? "WH" : "LAD"} price={runner.bookmakers.ladbrokes} color="red" />
-                                                                        <BookieBox label="PP" price={runner.bookmakers.paddypower} color="green" />
+                                                                        <BookieBox 
+                                                                            label="PIN" 
+                                                                            price={runner.bookmakers.pinnacle} 
+                                                                            color="orange" 
+                                                                            isBest={bestBookName === 'Pin'}
+                                                                        />
+                                                                        <BookieBox 
+                                                                            label={activeSport === 'MMA' ? "WH" : "LAD"} 
+                                                                            price={runner.bookmakers.ladbrokes} 
+                                                                            color="red" 
+                                                                            isBest={bestBookName === (activeSport === 'MMA' ? "WH" : "Lad")}
+                                                                        />
+                                                                        <BookieBox 
+                                                                            label="PP" 
+                                                                            price={runner.bookmakers.paddypower} 
+                                                                            color="green" 
+                                                                            isBest={bestBookName === 'PP'}
+                                                                        />
                                                                     </div>
                                                                 </div>
                                                             </div>
@@ -586,7 +646,7 @@ export default function Home() {
   );
 }
 
-// --- SUB-COMPONENTS FOR CLEANER JSX ---
+// --- SUB-COMPONENTS ---
 
 const PriceBox = ({ label, price, type }: any) => (
     <div className={`w-14 h-10 rounded flex flex-col items-center justify-center border ${type === 'back' ? 'bg-[#0f172a] border-blue-500/30' : 'bg-[#1a0f14] border-pink-500/40'}`}>
@@ -595,8 +655,7 @@ const PriceBox = ({ label, price, type }: any) => (
     </div>
 );
 
-const BookieBox = ({ label, price, color }: any) => {
-    // Basic gradient logic
+const BookieBox = ({ label, price, color, isBest }: any) => {
     const gradients: any = {
         orange: 'from-orange-600/20 to-orange-900/20 border-orange-500/30 text-orange-200',
         red: 'from-red-600/20 to-red-900/20 border-red-500/30 text-red-200',
@@ -605,7 +664,7 @@ const BookieBox = ({ label, price, color }: any) => {
     const style = gradients[color] || gradients.orange;
 
     return (
-        <div className={`w-14 h-10 rounded flex flex-col items-center justify-center bg-gradient-to-b border ${style}`}>
+        <div className={`w-14 h-10 rounded flex flex-col items-center justify-center border transition-all ${style} ${isBest ? 'ring-1 ring-white/50 scale-105 shadow-lg z-10' : 'opacity-70 grayscale-[0.3]'}`}>
             <span className="text-[7px] uppercase font-bold leading-none mb-0.5 opacity-70">{label}</span>
             <span className="text-sm font-bold leading-none">{price && price > 1 ? price.toFixed(2) : '—'}</span>
         </div>
