@@ -1,213 +1,109 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { supabase } from '../utils/supabase';
-import { Zap, Clock, ArrowRight } from 'lucide-react';
+import { supabase } from '@/utils/supabase';
+import { Flame, Star, TrendingDown, Zap } from 'lucide-react';
 
-// --- CONFIG ---
-const STEAMER_TEST_MODE = false;
-// --------------
-
-interface Mover {
-  selection_key: string;
+interface Steamer {
   runner_name: string;
   event_name: string;
-  sport: string;
-  back_now: number;
-  lay_now: number;
-  back_then: number;
-  lay_then: number;
-  pct_move: number;
-  vol_delta: number;
-  spread: number;
-  label: 'STEAMER' | 'DRIFTER';
-  status: string;
+  current_price: number;
+  opening_price: number;
+  delta_pct: number;
+  score: number;
+  is_pinned: boolean;
 }
 
-interface Props {
-  activeSport: string;
-  onSteamersChange?: (
-    events: Set<string>, 
-    signals: Map<string, any>
-  ) => void;
-}
+export default function SteamersPanel({ activeSport, onSteamersChange }: any) {
+  const [steamers, setSteamers] = useState<Steamer[]>([]);
+  const [pinned, setPinned] = useState<string[]>([]);
 
-export default function SteamersPanel({ activeSport, onSteamersChange }: Props) {
-  const [movers, setMovers] = useState<Mover[]>([]);
-  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    const saved = localStorage.getItem('pinned_steamers');
+    if (saved) setPinned(JSON.parse(saved));
+  }, []);
 
-  const fetchMovers = async () => {
-    try {
-      const { data, error } = await supabase.rpc('get_steamers', { 
-          time_window_minutes: 15 
-      });
-      if (data) setMovers(data);
-      
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setLoading(false);
-    }
+  const fetchSteamData = async () => {
+    const { data, error } = await supabase
+      .from('market_snapshots')
+      .select('*')
+      .eq('sport', activeSport)
+      .order('ts', { ascending: false })
+      .limit(100);
+
+    if (error || !data) return;
+
+    // Logic: Group by selection and find price move
+    const groups: Record<string, any[]> = {};
+    data.forEach(d => {
+      if (!groups[d.runner_name]) groups[d.runner_name] = [];
+      groups[d.runner_name].push(d);
+    });
+
+    const calculated: Steamer[] = Object.keys(groups).map(name => {
+      const history = groups[name];
+      const current = history[0].mid_price;
+      const oldest = history[history.length - 1].mid_price;
+      const delta = ((oldest - current) / oldest) * 100;
+
+      return {
+        runner_name: name,
+        event_name: history[0].event_name,
+        current_price: current,
+        opening_price: oldest,
+        delta_pct: delta,
+        score: Math.min(100, Math.max(0, delta * 5)), // Simple weight
+        is_pinned: pinned.includes(name)
+      };
+    }).filter(s => s.delta_pct > 1.5) // Only show moves > 1.5%
+      .sort((a, b) => (b.is_pinned ? 1 : 0) - (a.is_pinned ? 1 : 0) || b.score - a.score);
+
+    setSteamers(calculated);
+    
+    // Pass back to parent to highlight rows in main table
+    const steamerNames = new Set(calculated.map(s => s.runner_name));
+    const signals = new Map(calculated.map(s => [s.runner_name, { label: 'STEAMER', pct: s.delta_pct / 100 }]));
+    onSteamersChange(steamerNames, signals);
   };
 
   useEffect(() => {
-    fetchMovers();
-    const interval = setInterval(fetchMovers, 10000); 
+    fetchSteamData();
+    const interval = setInterval(fetchSteamData, 15000); // 15s refresh
     return () => clearInterval(interval);
-  }, []);
+  }, [activeSport, pinned]);
 
-  // 1. FILTER & DEDUPLICATE (IMMUTABLE RULE: NBA PRE-MATCH)
-  const filteredMovers = (() => {
-      let candidates = movers.filter(m => {
-          if (!activeSport || activeSport === 'All') return true;
-          return m.sport === activeSport;
-      });
+  const togglePin = (name: string) => {
+    const newPinned = pinned.includes(name) ? pinned.filter(p => p !== name) : [...pinned, name];
+    setPinned(newPinned);
+    localStorage.setItem('pinned_steamers', JSON.stringify(newPinned));
+  };
 
-      if (activeSport === 'Basketball' || activeSport === 'NBA') {
-          const uniqueMap = new Map();
-          candidates.sort((a, b) => Math.abs(b.pct_move) - Math.abs(a.pct_move));
-          candidates.forEach(m => {
-              const key = m.event_name; 
-              if (!uniqueMap.has(key)) uniqueMap.set(key, m);
-          });
-          return Array.from(uniqueMap.values());
-      }
-      return candidates;
-  })();
-
-  // 2. NOTIFY PARENT
-  useEffect(() => {
-    if (onSteamersChange) {
-      const uniqueEvents = new Set(filteredMovers.map(m => m.event_name));
-      const signalMap = new Map<string, any>();
-      
-      filteredMovers.forEach(m => {
-          // ✅ TEST MODE: Lower threshold to 0.1%
-          const threshold = STEAMER_TEST_MODE ? 0.001 : 0.02;
-
-          if (Math.abs(m.pct_move) >= threshold) {
-              signalMap.set(m.runner_name, { 
-                  label: m.label, 
-                  pct: m.pct_move 
-              });
-          }
-      });
-
-      onSteamersChange(uniqueEvents, signalMap);
-    }
-  }, [filteredMovers, onSteamersChange]);
-
-  if (loading || filteredMovers.length === 0) return null;
+  if (steamers.length === 0) return null;
 
   return (
-    <div className="mb-8 space-y-3">
-        {/* Section Header */}
-        <div className="flex items-center justify-between px-1">
-            <h3 className="text-white font-bold text-sm flex items-center gap-2">
-                <Zap className="text-yellow-400 fill-yellow-400" size={16} /> 
-                SMART MONEY 
-                <span className="text-slate-500 font-normal text-xs ml-1">
-                    ({activeSport} • 15m Window)
+    <div className="bg-[#161F32]/50 border border-blue-500/20 rounded-xl p-4 mb-6">
+      <div className="flex items-center gap-2 mb-4">
+        <Flame className="text-orange-500" size={18} />
+        <h3 className="text-white font-bold">Live Steam (Significant Moves)</h3>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+        {steamers.map(s => (
+          <div key={s.runner_name} className="bg-[#0B1120] border border-slate-800 p-3 rounded-lg flex justify-between items-center group">
+            <div className="flex flex-col">
+              <span className="text-white font-bold text-sm">{s.runner_name}</span>
+              <span className="text-slate-500 text-[10px] uppercase">{s.event_name}</span>
+              <div className="flex items-center gap-2 mt-1">
+                <span className="text-blue-400 font-mono text-xs">{s.opening_price.toFixed(2)} → {s.current_price.toFixed(2)}</span>
+                <span className="bg-blue-500/10 text-blue-400 text-[10px] px-1.5 py-0.5 rounded font-bold">
+                  -{s.delta_pct.toFixed(1)}%
                 </span>
-            </h3>
-        </div>
-        
-        {/* Grid Layout */}
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-            {filteredMovers.slice(0, 6).map((m) => {
-                const isSteamer = m.label === 'STEAMER';
-                const trendColor = isSteamer ? 'text-blue-400' : 'text-pink-400';
-                const borderColor = isSteamer ? 'border-blue-500/20' : 'border-pink-500/20';
-                
-                const fmtPrice = (p: number) => (p ? p.toFixed(2) : '-');
-                const pctDisplay = Math.abs(m.pct_move * 100).toFixed(1);
-                
-                const oldPrice = isSteamer ? m.back_then : m.lay_then;
-                const newPrice = isSteamer ? m.back_now : m.lay_now;
-
-                return (
-                    <div key={m.selection_key} className={`bg-[#131b2c] border ${borderColor} rounded-lg p-3 shadow-lg relative group`}>
-                        
-                        {/* ROW 1: HEADER & CONTEXT */}
-                        <div className="flex justify-between items-start mb-3 border-b border-slate-800/50 pb-2">
-                            <div className="flex flex-col">
-                                <div className="flex items-center gap-2">
-                                    <span className={`text-[10px] font-bold px-1.5 rounded-sm ${isSteamer ? 'bg-blue-500/20 text-blue-300' : 'bg-pink-500/20 text-pink-300'}`}>
-                                        {m.label}
-                                    </span>
-                                    <span className="text-slate-200 font-bold text-sm truncate max-w-[180px]">
-                                        {m.runner_name}
-                                    </span>
-                                </div>
-                                <span className="text-[11px] text-slate-500 mt-0.5 truncate max-w-[220px]">
-                                    {m.event_name}
-                                </span>
-                            </div>
-                            <div className="text-right">
-                                <span className="text-[10px] text-slate-600 uppercase font-mono block">
-                                    {m.sport}
-                                </span>
-                                <span className="text-[10px] text-slate-500 flex items-center justify-end gap-1 mt-0.5">
-                                    <Clock size={10} /> 15m
-                                </span>
-                            </div>
-                        </div>
-
-                        {/* ROW 2: PRICE ACTION */}
-                        <div className="flex items-center justify-between mb-3 px-1">
-                            <div className="flex flex-col">
-                                <span className="text-[10px] text-slate-500 uppercase font-medium">
-                                    Price Taken
-                                </span>
-                                <div className="flex items-center gap-2 text-sm">
-                                    <span className="text-slate-500 line-through decoration-slate-600">
-                                        {fmtPrice(oldPrice)}
-                                    </span>
-                                    <ArrowRight size={12} className="text-slate-600" />
-                                    <span className={`font-mono font-bold text-lg ${trendColor}`}>
-                                        {fmtPrice(newPrice)}
-                                    </span>
-                                    <span className={`text-xs font-medium ml-1 ${trendColor}`}>
-                                        ({pctDisplay}%)
-                                    </span>
-                                </div>
-                            </div>
-                            
-                            <div className="text-right flex flex-col items-end">
-                                <span className="text-[10px] text-slate-500 uppercase font-medium">
-                                    Matched
-                                </span>
-                                <span className="font-mono text-white text-sm flex items-center gap-0.5">
-                                    <span className="text-slate-600">+£</span>
-                                    {(m.vol_delta / 1000).toFixed(1)}k
-                                </span>
-                            </div>
-                        </div>
-
-                        {/* ROW 3: EXECUTION */}
-                        <div className="bg-[#0B1120] rounded p-2 flex items-center justify-between text-xs">
-                            <div className="flex items-center gap-3">
-                                <div className="flex flex-col items-center min-w-[40px]">
-                                    <span className="text-[9px] text-blue-500 uppercase mb-0.5">Back</span>
-                                    <span className="font-mono font-bold text-white">{fmtPrice(m.back_now)}</span>
-                                </div>
-                                <div className="w-px h-6 bg-slate-800"></div>
-                                <div className="flex flex-col items-center min-w-[40px]">
-                                    <span className="text-[9px] text-pink-500 uppercase mb-0.5">Lay</span>
-                                    <span className="font-mono font-bold text-white">{fmtPrice(m.lay_now)}</span>
-                                </div>
-                            </div>
-                            
-                            <div className="flex flex-col items-end">
-                                <span className={`text-[10px] font-medium flex items-center gap-1.5 ${m.spread < 0.05 ? 'text-green-500' : 'text-yellow-600'}`}>
-                                    {m.spread < 0.05 ? '● Tight Spread' : '○ Wide Spread'}
-                                </span>
-                                <span className="text-[9px] text-slate-600 italic mt-0.5">{m.status}</span>
-                            </div>
-                        </div>
-                    </div>
-                );
-            })}
-        </div>
+              </div>
+            </div>
+            <button onClick={() => togglePin(s.runner_name)} className={`p-2 rounded hover:bg-slate-800 transition-colors ${s.is_pinned ? 'text-yellow-500' : 'text-slate-600'}`}>
+              <Star size={16} fill={s.is_pinned ? "currentColor" : "none"} />
+            </button>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
