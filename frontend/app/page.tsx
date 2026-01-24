@@ -210,16 +210,12 @@ export default function Home() {
 
   // STABLE CALLBACK
   const handleSteamersChange = useCallback(
-    (newEvents: Set<string>, newSignals: Map<string, any>) => {
-      setSteamerEvents(prev => 
-        areSetsEqual(prev, newEvents) ? prev : newEvents
-      );
-      setSteamerSignals(prev => 
-        areMapsEqual(prev, newSignals) ? prev : newSignals
-      );
-    }, 
-    []
-  );
+  (newEvents: Set<string>, newSignals: Map<string, any>) => {
+    setSteamerEvents(newEvents);
+    setSteamerSignals(newSignals);
+  }, 
+  []
+    );
 
   const visibleSports = SCOPE_MODE.startsWith("NBA_PREMATCH_ML") 
     ? SPORTS.filter(s => s.id === 'Basketball' || s.id === 'MMA') 
