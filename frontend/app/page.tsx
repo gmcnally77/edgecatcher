@@ -282,7 +282,7 @@ export default function Home() {
                     </div>
                     <div className="flex flex-col">
                         <span className="block text-lg font-bold text-white leading-none">
-                            NBA Scanner <span className="text-slate-500 text-sm ml-1">v2</span>
+                            Steam Finder <span className="text-slate-500 text-sm ml-1">v2</span>
                         </span>
                     </div>
                     {!isPaid && (
