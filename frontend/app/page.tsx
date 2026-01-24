@@ -9,7 +9,7 @@ import {
 import SteamersPanel from '@/components/SteamersPanel';
 
 // --- CONFIG ---
-const STEAMER_TEST_MODE = true; // ✅ ACTIVE: Shows ALL markets for testing
+const STEAMER_TEST_MODE = true; // ✅ ACTIVE: Shows ALL markets in Grid for UI testing
 // --------------
 
 const SPORTS = [
@@ -18,17 +18,17 @@ const SPORTS = [
   { id: 'Basketball', label: 'Basketball', icon: <Dribbble size={16} /> },
 ];
 
-const formatPrice = (price: number | null) => {
-    if (!price || price <= 1.0) return '—';
-    return price.toFixed(2);
-};
+// HELPER: Equality checks
+const areSetsEqual = (a: Set<string>, b: Set<string>) => 
+  a.size === b.size && [...a].every(x => b.has(x));
 
-const formatTime = (isoString: string) => {
-    if (!isoString) return '';
-    return new Date(isoString).toLocaleDateString('en-GB', { 
-        weekday: 'short', hour: '2-digit', minute: '2-digit' 
-    });
-};
+const areMapsEqual = (a: Map<string, any>, b: Map<string, any>) =>
+  a.size === b.size &&
+  [...a].every(([k, v]) => JSON.stringify(b.get(k)) === JSON.stringify(v));
+
+// HELPER: Normalize strings
+const normalizeKey = (str: string) => 
+  str ? str.toLowerCase().replace(/[^a-z0-9]/g, '') : '';
 
 const groupData = (data: any[]) => {
   const competitions: Record<string, any[]> = {};
@@ -115,18 +115,6 @@ const groupData = (data: any[]) => {
 
   return competitions;
 };
-
-// HELPER: Equality checks
-const areSetsEqual = (a: Set<string>, b: Set<string>) => 
-  a.size === b.size && [...a].every(x => b.has(x));
-
-const areMapsEqual = (a: Map<string, any>, b: Map<string, any>) =>
-  a.size === b.size &&
-  [...a].every(([k, v]) => JSON.stringify(b.get(k)) === JSON.stringify(v));
-
-// HELPER: Normalize strings
-const normalizeKey = (str: string) => 
-  str ? str.toLowerCase().replace(/[^a-z0-9]/g, '') : '';
 
 export default function Home() {
   const [activeSport, setActiveSport] = useState('Basketball');
@@ -267,6 +255,18 @@ export default function Home() {
     return () => clearInterval(interval);
   }, [activeSport]);
 
+  const formatTime = (isoString: string) => {
+    if (!isoString) return '';
+    return new Date(isoString).toLocaleDateString('en-GB', { 
+        weekday: 'short', hour: '2-digit', minute: '2-digit' 
+    });
+  };
+
+  const formatPrice = (price: number | null) => {
+      if (!price || price <= 1.0) return '—';
+      return price.toFixed(2);
+  };
+
   return (
     <div className="min-h-screen bg-[#0B1120] text-slate-300 font-sans selection:bg-blue-500/30 selection:text-blue-200">
       
@@ -285,6 +285,7 @@ export default function Home() {
                             EdgeScanner
                         </span>
                         <div className="flex items-center gap-2 mt-0.5">
+                            {/* GOLD PRO BADGE */}
                             <span className="text-[10px] uppercase font-bold text-yellow-400 tracking-widest bg-yellow-400/10 px-1.5 rounded border border-yellow-400/20">
                                 PRO
                             </span>
@@ -399,10 +400,12 @@ export default function Home() {
             if (viewMode === 'steamers') {
                 Object.values(competitions).forEach(markets => markets.forEach(m => allMarkets.push(m)));
                 
-                // ✅ FILTER LOGIC: If Test Mode -> Show ALL filtered markets (ignore steam requirement)
+                // ✅ FILTER LOGIC FIXED:
+                // If Test Mode -> Show ALL filtered markets (ignore steam requirement)
+                // If Real Mode -> Only show markets with Active Steam
                 const steamerMarkets = allMarkets.filter((m: any) => 
                     STEAMER_TEST_MODE 
-                        ? true 
+                        ? true // 🚨 SHOW EVERYTHING (Nuclear Bypass)
                         : m.selections.some((s: any) => steamerEvents.has(s.name))
                 );
 
@@ -449,17 +452,20 @@ export default function Home() {
                                                     <div className="flex items-center gap-2">
                                                         <span className="text-slate-200 font-medium text-sm">{runner.name}</span>
                                                         {signal && (
-                                                            // ✅ FIX: Green
                                                             <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider ${
-                                                                signal.label === 'STEAMER' 
-                                                                    ? 'bg-green-500/10 text-green-400 border border-green-500/20' 
-                                                                    : 'bg-red-500/10 text-red-400 border border-red-500/20'
+                                                                signal.label === 'STEAMER' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'
                                                             }`}>{signal.label}</span>
                                                         )}
                                                     </div>
                                                     <div className="flex gap-2">
-                                                        <PriceBox label="BACK" price={runner.exchange.back} type="back" />
-                                                        <PriceBox label="LAY" price={runner.exchange.lay} type="lay" />
+                                                        <div className="w-16 h-10 bg-[#0f172a] border border-blue-500/30 rounded flex flex-col items-center justify-center">
+                                                            <span className="text-[7px] text-blue-500 uppercase font-bold leading-none mb-0.5">Back</span>
+                                                            <span className="text-sm font-bold text-blue-400 leading-none">{formatPrice(runner.exchange.back)}</span>
+                                                        </div>
+                                                        <div className="w-16 h-10 bg-[#1a0f14] border border-pink-500/40 rounded flex flex-col items-center justify-center">
+                                                            <span className="text-[7px] text-pink-500 uppercase font-bold leading-none mb-0.5">Lay</span>
+                                                            <span className="text-sm font-bold text-pink-400 leading-none">{formatPrice(runner.exchange.lay)}</span>
+                                                        </div>
                                                     </div>
                                                 </div>
                                             );
@@ -474,7 +480,7 @@ export default function Home() {
             }
 
             // ============================================
-            // MODE B: SCANNER LIST (RESTORED)
+            // MODE B: SCANNER LIST (Detailed, Restored & Polished)
             // ============================================
             return (
                 <div className="space-y-8">
@@ -545,8 +551,7 @@ export default function Home() {
                                                                      );
                                                                 }
 
-                                                                // ✅ FIX: Green border
-                                                                if (diff > 0.01) selectionBorder = "border-l-4 border-l-green-500 bg-green-500/5";
+                                                                if (diff > 0.01) selectionBorder = "border-l-4 border-l-emerald-500 bg-emerald-500/5";
                                                                 else if (diff >= -0.01) selectionBorder = "border-l-4 border-l-amber-500 bg-amber-500/5";
                                                             }
                                                         }
@@ -558,12 +563,7 @@ export default function Home() {
                                                                     <div className="flex items-center gap-2">
                                                                         <span className="text-white font-medium">{runner.name}</span>
                                                                         {signal && (
-                                                                            // ✅ FIX: Green badge
-                                                                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${
-                                                                                signal.label === 'STEAMER' 
-                                                                                    ? 'bg-green-500/20 text-green-400' 
-                                                                                    : 'bg-red-500/20 text-red-400'
-                                                                            }`}>
+                                                                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${signal.label === 'STEAMER' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'}`}>
                                                                                 {signal.label}
                                                                             </span>
                                                                         )}

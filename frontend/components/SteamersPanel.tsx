@@ -1,90 +1,121 @@
 'use client';
-import { useEffect, useCallback } from 'react';
-import { supabase } from '@/utils/supabase';
+import { useEffect, useCallback, useRef } from 'react';
+import { supabase } from '../utils/supabase';
 
-// ✅ KEEP TRUE to verify the green badge works
-const SIMULATION_MODE = true; 
+// --- CONFIGURATION ---
+const STEAM_WINDOW_MINUTES = 60;  // Look back 1 hour
+const MIN_VOLUME = 500;           // Ignore low liquidity markets
+const STEAM_THRESHOLD = 0.03;     // 3% move required to flag
+const DRIFT_THRESHOLD = 0.03;     // 3% move required to flag
+const MAX_SNAPSHOTS = 2000;       // Safety limit for DB fetch
+
+interface Snapshot {
+  runner_name: string;
+  mid_price: number;
+  volume: number;
+  ts: string;
+}
 
 export default function SteamersPanel({ activeSport, onSteamersChange }: any) {
+  // Use ref to prevent race conditions in async intervals
+  const isMounted = useRef(true);
+
+  useEffect(() => {
+    return () => { isMounted.current = false; };
+  }, []);
+
   const fetchMovement = useCallback(async () => {
-    const hourAgo = new Date(Date.now() - 3600000).toISOString();
-    
-    // 1. Fetch History
-    let { data: snapshots } = await supabase
+    if (!activeSport) return;
+
+    // 1. Time Window
+    const timeHorizon = new Date(Date.now() - STEAM_WINDOW_MINUTES * 60 * 1000).toISOString();
+
+    // 2. Fetch History
+    // We fetch snapshots for the active sport to calculate trends
+    const { data, error } = await supabase
       .from('market_snapshots')
-      .select('*')
+      .select('runner_name, mid_price, volume, ts')
       .eq('sport', activeSport)
-      .gt('ts', hourAgo)
-      .order('ts', { ascending: false })
-      .limit(1000);
+      .gt('ts', timeHorizon)
+      .order('ts', { ascending: true }) // Oldest first for easy traversal
+      .limit(MAX_SNAPSHOTS);
 
+    if (error || !data || data.length === 0) {
+      if (isMounted.current) onSteamersChange(new Set(), new Map());
+      return;
+    }
+
+    // 3. Process Data
+    const groups: Record<string, Snapshot[]> = {};
     const signals = new Map();
-    const groups: Record<string, any[]> = {};
-    let activeRunners: string[] = [];
+    const eventSet = new Set<string>();
 
-    // 2. Process Real Data
-    if (snapshots && snapshots.length > 0) {
-      snapshots.forEach(d => {
-        if (!groups[d.runner_name]) {
-          groups[d.runner_name] = [];
-          activeRunners.push(d.runner_name);
-        }
-        groups[d.runner_name].push(d);
-      });
+    // Group by runner
+    data.forEach((row: Snapshot) => {
+      if (!groups[row.runner_name]) groups[row.runner_name] = [];
+      groups[row.runner_name].push(row);
+    });
 
-      Object.keys(groups).forEach(name => {
-        const history = groups[name];
-        if (history.length < 2) return;
+    // Analyze each runner
+    Object.entries(groups).forEach(([name, history]) => {
+      if (history.length < 2) return;
 
-        const current = history[0].mid_price;
-        const initial = history[history.length - 1].mid_price;
-        if (current <= 1.01 || initial <= 1.01) return;
+      const start = history[0];
+      const end = history[history.length - 1];
 
-        const delta = ((initial - current) / initial) * 100;
+      // A. Freshness Check (If data stopped updating 15 mins ago, ignore it)
+      const lastUpdate = new Date(end.ts).getTime();
+      const now = Date.now();
+      if (now - lastUpdate > 15 * 60 * 1000) return;
 
-        if (Math.abs(delta) >= 1.5) {
-          signals.set(name, {
-            label: delta > 0 ? 'STEAMER' : 'DRIFTER',
-            pct: Math.abs(delta) / 100
-          });
-        }
-      });
-    }
+      // B. Volume Check
+      if (end.volume < MIN_VOLUME) return;
 
-    // 3. Fallback for Empty DB (Self-Healing)
-    if (activeRunners.length === 0) {
-       const { data: liveFeed } = await supabase
-         .from('market_feed')
-         .select('runner_name')
-         .eq('sport', activeSport)
-         .limit(50);
-       
-       if (liveFeed) {
-         activeRunners = liveFeed.map(r => r.runner_name);
-       }
-    }
+      // C. Price Logic
+      // Steam = Price dropping (Odds getting smaller)
+      // Drift = Price rising (Odds getting larger)
+      // Formula: (Old - New) / Old
+      // Example Steam: 2.0 -> 1.8 = (2.0 - 1.8)/2.0 = +0.10 (+10%)
+      
+      // Ignore extreme outliers (likely API glitches)
+      if (start.mid_price > 50 || end.mid_price > 50) return; 
 
-    // 4. Inject Test Signals (Visual Verification)
-    if (SIMULATION_MODE && activeRunners.length > 0) {
-      const shuffled = activeRunners.sort(() => 0.5 - Math.random());
-      const selected = shuffled.slice(0, 4); 
+      const delta = (start.mid_price - end.mid_price) / start.mid_price;
 
-      selected.forEach((name, index) => {
-        // Alternate Green/Red to prove styles work
-        const isSteam = index % 2 === 0; 
+      if (delta >= STEAM_THRESHOLD) {
         signals.set(name, {
-          label: isSteam ? 'STEAMER' : 'DRIFTER',
-          pct: 0.05
+          label: 'STEAMER',
+          pct: delta,
+          startPrice: start.mid_price,
+          endPrice: end.mid_price
         });
-      });
+        eventSet.add(name);
+      } else if (delta <= -DRIFT_THRESHOLD) {
+        // Only show drifters if high confidence
+        signals.set(name, {
+          label: 'DRIFTER',
+          pct: Math.abs(delta),
+          startPrice: start.mid_price,
+          endPrice: end.mid_price
+        });
+        // We typically don't trigger the "Steam Grid" for drifters alone, 
+        // but adding to set allows user to see them if they search.
+        // Uncomment next line to include drifters in grid:
+        // eventSet.add(name);
+      }
+    });
+
+    // 4. Broadcast
+    if (isMounted.current) {
+      console.log(`[SteamersPanel] Analyzed ${Object.keys(groups).length} runners, found ${signals.size} moves.`);
+      onSteamersChange(eventSet, signals);
     }
 
-    onSteamersChange(new Set(signals.keys()), signals);
   }, [activeSport, onSteamersChange]);
 
   useEffect(() => {
     fetchMovement();
-    const interval = setInterval(fetchMovement, 5000); 
+    const interval = setInterval(fetchMovement, 10000); // Check for steam every 10s
     return () => clearInterval(interval);
   }, [fetchMovement]);
 
