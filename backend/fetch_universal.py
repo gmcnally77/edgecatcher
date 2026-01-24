@@ -58,12 +58,13 @@ CACHE_DIR = "api_cache"
 if not os.path.exists(CACHE_DIR):
     os.makedirs(CACHE_DIR)
 
-# --- IN-PLAY SETTINGS (MINIMAL, LOCAL CONSTANTS) ---
-INPLAY_WINDOW_SECONDS = 4 * 3600     # treat matches as "in-play relevant" up to 4h after start
-PREMATCH_SPY_INTERVAL = 15           # seconds (Check TTL frequently)
-INPLAY_SPY_INTERVAL = 15             # seconds
-TTL_INPLAY_SECONDS = 60              # odds api cache TTL (HARD LIMIT for 20k/mo budget)
-CALLS_THIS_SESSION = 0               # Global counter for accounting
+# --- TRACKING & QUOTA (20K/MO PLAN) ---
+CALLS_TODAY = 0
+LAST_REPORT_DATE = datetime.now(timezone.utc).date()
+INPLAY_WINDOW_SECONDS = 4 * 3600     
+PREMATCH_SPY_INTERVAL = 15           
+INPLAY_SPY_INTERVAL = 15             
+TTL_INPLAY_SECONDS = 60
 
 # --- SNAPSHOT SETTINGS (NEW) ---
 last_snapshot_time = 0
@@ -100,11 +101,22 @@ def fetch_cached_odds(sport_key, ttl_seconds, bookmakers=None, region='uk,eu'):
         'bookmakers': bookmakers or 'pinnacle,williamhill,paddypower,ladbrokes_uk'
     }
 
-    urgency_label = "URGENT" if ttl_seconds < 300 else "NORMAL" if ttl_seconds < 3600 else "LAZY"
+    urgency_label = "URGENT" if ttl_seconds < 150 else "NORMAL" if ttl_seconds < 600 else "LAZY"
     
-    global CALLS_THIS_SESSION
-    CALLS_THIS_SESSION += 1
-    logger.info(f"🌍 CALLING API [#{CALLS_THIS_SESSION}] ({urgency_label}): {sport_key} (TTL: {ttl_seconds}s)...")
+    global CALLS_TODAY, LAST_REPORT_DATE
+    now_dt = datetime.now(timezone.utc)
+    
+    # 📊 DAILY BURN REPORT (Reset at Midnight UTC)
+    if now_dt.date() > LAST_REPORT_DATE:
+        logger.info(f"--------------------------------------------------")
+        logger.info(f"📊 DAILY CREDIT REPORT: {LAST_REPORT_DATE}")
+        logger.info(f"   TOTAL CREDITS BURNT: {CALLS_TODAY}")
+        logger.info(f"--------------------------------------------------")
+        CALLS_TODAY = 0
+        LAST_REPORT_DATE = now_dt.date()
+
+    CALLS_TODAY += 1
+    logger.info(f"🌍 API CALL [#{CALLS_TODAY} Today] ({urgency_label}): {sport_key}...")
 
     try:
         response = requests.get(url, params=params, timeout=15)
@@ -339,13 +351,24 @@ def run_spy():
         if min_seconds_away == 999999 and any(r['sport'] == sport['name'] for r in active_rows):
             min_seconds_away = 7200
 
-        # 🧠 ECONOMY BUDGETING (Optimized for $30/20k Plan)
-        if min_seconds_away == 0:
-            ttl = 90                      # Live: 1.5 mins
-        elif min_seconds_away < 86400:    # < 24 Hours (DAY OF GAME)
-            ttl = 480                     # ⚡ 8 mins: Keeps both sports synced for 30 days
-        else:                             # > 24 Hours (FUTURE)
-            ttl = 7200                    # 🧊 Hibernate: 2 hour updates
+# 🧠 SURGICAL BUDGETING (NBA 2m / MMA 1m / 0 IN-PLAY)
+        if min_seconds_away <= 0:
+            # 🛑 SILENCE IN-PLAY: Save credits by sleeping 10 mins
+            ttl = 600 
+        elif sport['name'] == 'MMA':
+            if min_seconds_away < 28800:   # 8 Hours before Fight: 1 min
+                ttl = 60  
+            elif min_seconds_away < 86400: # Fight Day: 5 mins
+                ttl = 300 
+            else:                          # Maintenance: 1 day
+                ttl = 86400 
+        elif sport['name'] == 'Basketball':
+            if min_seconds_away < 43200:   # 12 Hours before Tip: 2 mins
+                ttl = 120 
+            else:                          # Maintenance: 5 mins
+                ttl = 300 
+        else:
+            ttl = 3600 # Fallback
 
         # 🔍 DEBUG: Print exactly why we are sleeping
         if min_seconds_away < 86400:
