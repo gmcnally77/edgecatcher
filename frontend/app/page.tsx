@@ -9,7 +9,7 @@ import {
 import SteamersPanel from '@/components/SteamersPanel';
 
 // --- CONFIG ---
-const STEAMER_TEST_MODE = true;
+const STEAMER_TEST_MODE = true; // ✅ KEPT TRUE FOR VISIBILITY
 // --------------
 
 const SPORTS = [
@@ -399,11 +399,31 @@ export default function Home() {
             // ============================================
             if (viewMode === 'steamers') {
                 Object.values(competitions).forEach(markets => markets.forEach(m => allMarkets.push(m)));
-                const filtered = filterMarkets(allMarkets);
+                
+                // ✅ FIX: Filter based on whether ANY runner in the market is steaming
+                const steamerMarkets = allMarkets.filter((m: any) => 
+                    m.selections.some((s: any) => steamerEvents.has(s.name))
+                );
+
+                // Use the filtered list (or all if not filtering? No, grid only shows steamers)
+                const marketsToShow = STEAMER_TEST_MODE 
+                    ? steamerMarkets // In test mode, we only show valid steamers
+                    : steamerMarkets; 
+
+                // If nothing found in "Steam Mode", show message
+                if (marketsToShow.length === 0) {
+                    return (
+                        <div className="flex flex-col items-center justify-center py-20 text-slate-500">
+                            <Zap size={48} className="mb-4 opacity-20" />
+                            <p>No Steam Detected Yet</p>
+                            <p className="text-xs mt-2 opacity-50">Waiting for market moves...</p>
+                        </div>
+                    );
+                }
 
                 return (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {filtered.map((event: any) => {
+                        {marketsToShow.map((event: any) => {
                             const isPaywalled = !isPaid && globalGameIndex >= 3;
                             globalGameIndex++;
 
@@ -432,7 +452,7 @@ export default function Home() {
                                                         <span className="text-slate-200 font-medium text-sm">{runner.name}</span>
                                                         {signal && (
                                                             <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider ${
-                                                                signal.label === 'STEAM' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'
+                                                                signal.label === 'STEAMER' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'
                                                             }`}>{signal.label}</span>
                                                         )}
                                                     </div>
@@ -542,7 +562,7 @@ export default function Home() {
                                                                     <div className="flex items-center gap-2">
                                                                         <span className="text-white font-medium">{runner.name}</span>
                                                                         {signal && (
-                                                                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${signal.label === 'STEAM' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'}`}>
+                                                                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${signal.label === 'STEAMER' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'}`}>
                                                                                 {signal.label}
                                                                             </span>
                                                                         )}
