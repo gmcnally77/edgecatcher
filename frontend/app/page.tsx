@@ -4,8 +4,10 @@ import { supabase } from '../utils/supabase';
 import { 
   RefreshCw, TrendingUp, Clock, Radio, Lock, Unlock, 
   Swords, Trophy, Dribbble, AlertCircle, Copy, Check, Search,
-  Radar 
+  Radar, AlertTriangle
 } from 'lucide-react';
+
+// --- CONSTANTS & HELPERS ---
 
 const SPORTS = [
   { id: 'MMA', label: 'MMA', icon: <Swords size={16} /> },
@@ -13,34 +15,42 @@ const SPORTS = [
   { id: 'Basketball', label: 'Basketball', icon: <Dribbble size={16} /> },
 ];
 
-// HELPER: Normalize strings
 const normalizeKey = (str: string) => 
   str ? str.toLowerCase().replace(/[^a-z0-9]/g, '') : '';
 
-// 🚨 DATA GROUPING ENGINE (With Stable Keys)
+const formatTime = (isoString: string) => {
+    if (!isoString) return '';
+    return new Date(isoString).toLocaleDateString('en-GB', { 
+        weekday: 'short', hour: '2-digit', minute: '2-digit' 
+    });
+};
+
+const formatPrice = (p: number) => (p && p > 1 ? p.toFixed(2) : '—');
+
+// --- DATA GROUPING ENGINE (Unchanged) ---
 const groupData = (data: any[]) => {
   const competitions: Record<string, any[]> = {};
 
-  // 1. FRESHNESS SORT: Process newest updates first to kill zombies
+  // 1. FRESHNESS SORT
   data.sort((a, b) => new Date(b.last_updated).getTime() - new Date(a.last_updated).getTime());
 
   data.forEach(row => {
     const compName = row.competition || 'Other';
     if (!competitions[compName]) competitions[compName] = [];
     
-    // 2. DEDUP: Find existing by ID or Fuzzy Name Match
+    // 2. DEDUP
     let market = competitions[compName].find(m => 
         m.id === row.market_id || 
         (m.name === row.event_name && Math.abs(new Date(m.start_time).getTime() - new Date(row.start_time).getTime()) < 3600000)
     );
 
     if (!market) {
-        // 🛑 STABLE KEY GENERATION (The Fix for Jumping UI)
+        // STABLE KEY GENERATION
         const stableKey = `${row.event_name}_${row.start_time}`;
 
         market = {
             id: row.market_id,
-            stable_key: stableKey, // <--- Used for React Keys
+            stable_key: stableKey,
             name: row.event_name,
             start_time: row.start_time,
             volume: row.volume,
@@ -50,7 +60,7 @@ const groupData = (data: any[]) => {
         };
         competitions[compName].push(market);
     } else {
-        if (market.id !== row.market_id) return; // Ignore duplicate/zombie row
+        if (market.id !== row.market_id) return;
     }
 
     market.selections.push({
@@ -65,22 +75,16 @@ const groupData = (data: any[]) => {
     });
   });
 
-  // 3. STABLE SORT: Force strict order by Time -> Name
+  // 3. STABLE SORT
   Object.keys(competitions).forEach(key => {
       competitions[key].sort((a, b) => {
-          // Rule 1: Live games first
           if (a.in_play && !b.in_play) return -1;
           if (!a.in_play && b.in_play) return 1;
-
-          // Rule 2: Start Time (Soonest first)
           const timeDiff = new Date(a.start_time).getTime() - new Date(b.start_time).getTime();
           if (timeDiff !== 0) return timeDiff;
-
-          // Rule 3: Alphabetical (Tie-breaker)
           return a.name.localeCompare(b.name);
       });
       
-      // Sort Selections A-Z
       competitions[key].forEach(market => {
           market.selections.sort((a: any, b: any) => a.name.localeCompare(b.name));
       });
@@ -88,6 +92,8 @@ const groupData = (data: any[]) => {
 
   return competitions;
 };
+
+// --- MAIN PAGE COMPONENT ---
 
 export default function Home() {
   const [activeSport, setActiveSport] = useState('Basketball');
@@ -103,6 +109,7 @@ export default function Home() {
   const [paymentRef, setPaymentRef] = useState('');
   const [copied, setCopied] = useState(false);
   
+  // --- EFFECTS (Timers & Fetching) ---
   useEffect(() => {
     const timer = setInterval(() => {
         const start = typeof window !== 'undefined' ? localStorage.getItem('trial_start') : null;
@@ -162,7 +169,6 @@ export default function Home() {
   };
 
   const SCOPE_MODE = process.env.NEXT_PUBLIC_SCOPE_MODE || "";
-
   const visibleSports = SCOPE_MODE.startsWith("NBA_PREMATCH_ML") 
     ? SPORTS.filter(s => s.id === 'Basketball' || s.id === 'MMA') 
     : SPORTS;
@@ -186,7 +192,6 @@ export default function Home() {
 
     if (!error && data) {
       const now = new Date();
-      // Relaxed heartbeat to prevent blank screen if data is slightly old
       const heartbeatCutoff = new Date(now.getTime() - 24 * 60 * 60 * 1000);
 
       const activeRows = data.filter((row: any) => {
@@ -217,18 +222,8 @@ export default function Home() {
     return () => clearInterval(interval);
   }, [activeSport]);
 
-  const formatTime = (isoString: string) => {
-    if (!isoString) return '';
-    return new Date(isoString).toLocaleDateString('en-GB', { 
-        weekday: 'short', hour: '2-digit', minute: '2-digit' 
-    });
-  };
 
-  const formatPrice = (price: number | null) => {
-      if (!price || price <= 1.0) return '—';
-      return price.toFixed(2);
-  };
-
+  // --- RENDER ---
   return (
     <div className="min-h-screen bg-[#0B1120] text-slate-300 font-sans selection:bg-blue-500/30 selection:text-blue-200">
       
@@ -247,7 +242,6 @@ export default function Home() {
                             EdgeScanner
                         </span>
                         <div className="flex items-center gap-2 mt-0.5">
-                            {/* GOLD PRO BADGE */}
                             <span className="text-[10px] uppercase font-bold text-yellow-400 tracking-widest bg-yellow-400/10 px-1.5 rounded border border-yellow-400/20">
                                 PRO
                             </span>
@@ -262,13 +256,11 @@ export default function Home() {
                 
                 {/* CONTROLS */}
                 <div className="flex items-center gap-3 w-full md:w-auto">
-                    {/* LIVE INDICATOR */}
                     <div className="bg-[#161F32] px-3 py-1.5 rounded-lg border border-slate-700/50 flex items-center gap-2">
                         <Radar size={12} className="text-blue-400 animate-pulse" />
                         <span className="text-xs font-bold text-blue-100 uppercase tracking-wide">Live Scanner</span>
                     </div>
 
-                    {/* FREE PASS STATUS */}
                     {trialTimeLeft && (
                         <div className="hidden md:flex flex-col items-end">
                              <span className="text-[9px] font-bold text-emerald-400 uppercase tracking-wider">
@@ -282,16 +274,16 @@ export default function Home() {
                 </div>
             </div>
 
-            {/* SPORT TABS */}
-            <div className="flex gap-6 border-b border-transparent overflow-x-auto no-scrollbar">
+            {/* SPORT TABS (Segmented Control Style) */}
+            <div className="flex gap-2 overflow-x-auto no-scrollbar pb-2">
                 {visibleSports.map((sport) => (
                     <button 
                         key={sport.id} 
                         onClick={() => setActiveSport(sport.id)} 
-                        className={`flex items-center gap-2 pb-3 text-sm font-bold transition-all border-b-2 whitespace-nowrap ${
+                        className={`flex items-center gap-2 px-4 py-2 rounded-full text-xs font-bold transition-all whitespace-nowrap border ${
                             activeSport === sport.id 
-                                ? 'text-white border-blue-500' 
-                                : 'text-slate-500 border-transparent hover:text-slate-300'
+                                ? 'bg-blue-600 border-blue-500 text-white shadow-lg shadow-blue-900/20' 
+                                : 'bg-[#161F32] border-slate-700 text-slate-400 hover:text-slate-200 hover:border-slate-600'
                         }`}
                     >
                         {sport.icon} {sport.label}
@@ -303,15 +295,15 @@ export default function Home() {
 
       <div className="max-w-7xl mx-auto px-4 py-6 space-y-6">
         
-        {/* SEARCH BAR */}
+        {/* COMPACT SEARCH BAR */}
         <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={16} />
             <input 
                 type="text"
-                placeholder={`Find a ${activeSport === 'MMA' ? 'fight' : 'game'}...`}
+                placeholder="Search..." // Shortened for mobile
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full bg-[#161F32] border border-slate-700 rounded-lg py-3 pl-10 pr-4 text-sm text-white focus:outline-none focus:border-blue-500 transition-colors"
+                className="w-full bg-[#161F32] border border-slate-700 rounded-lg py-2.5 pl-9 pr-4 text-sm text-white focus:outline-none focus:border-blue-500 transition-colors placeholder:text-slate-600"
             />
         </div>
 
@@ -321,7 +313,7 @@ export default function Home() {
             </div>
         )}
 
-        {/* --- MAIN CONTENT (SCANNER ONLY) --- */}
+        {/* --- MAIN CONTENT (REFACTORED) --- */}
         {(() => { 
             let globalGameIndex = 0; 
             
@@ -330,9 +322,6 @@ export default function Home() {
                 m.selections.some((s: any) => s.name.toLowerCase().includes(searchQuery.toLowerCase()))
             );
 
-            // ============================================
-            // MODE: SCANNER LIST (Detailed)
-            // ============================================
             return (
                 <div className="space-y-8">
                     {Object.entries(competitions).map(([compName, markets]) => {
@@ -341,126 +330,24 @@ export default function Home() {
 
                         return (
                             <div key={compName}>
-                                <h2 className="text-white font-bold text-lg mb-4 flex items-center gap-2">
-                                    <span className="w-1 h-6 bg-blue-500 rounded-full"></span> {compName}
+                                <h2 className="text-slate-400 font-bold text-xs uppercase tracking-widest mb-3 flex items-center gap-2 px-1">
+                                    {compName}
                                 </h2>
-                                <div className="space-y-4">
+                                
+                                <div className="space-y-3">
                                     {filtered.map((event: any) => {
                                         const isPaywalled = !isPaid && globalGameIndex >= 3;
                                         globalGameIndex++;
                                         
-                                        const isSuspended = event.market_status === 'SUSPENDED';
-                                        const isInPlay = event.in_play;
-                                        let borderClass = 'border-slate-700/50';
-                                        if (isSuspended) borderClass = 'border-yellow-500/50';
-                                        else if (isInPlay) borderClass = 'border-red-500/50';
-
                                         return (
-                                            // 🛑 STABLE KEY
-                                            <div key={event.stable_key} className={`bg-[#161F32] border ${borderClass} rounded-xl overflow-hidden relative`}>
-                                                <div className="bg-[#0f1522] px-4 py-3 border-b border-slate-800 flex justify-between items-center">
-                                                    <h3 className="text-slate-200 font-bold text-sm">{event.name}</h3>
-                                                    <div className="flex gap-2 text-xs text-slate-500">
-                                                        {isInPlay ? <span className="text-red-500 font-bold">LIVE</span> : formatTime(event.start_time)}
-                                                    </div>
-                                                </div>
-                                                
-                                                <div className={`divide-y divide-slate-800 ${isPaywalled ? 'blur-sm select-none opacity-40 pointer-events-none' : ''}`}>
-                                                    {event.selections?.map((runner: any) => {
-                                                        
-                                                        // RESTORED & FIXED VALUE LOGIC
-                                                        let selectionBorder = "border-transparent";
-                                                        let bestBookPrice = 0;
-                                                        let bestBookName = "";
-                                                        let valueText = null;
-
-                                                        if (runner.exchange.lay > 1.0) {
-                                                            const books = [
-                                                                { name: 'Pin', p: runner.bookmakers.pinnacle },
-                                                                { name: activeSport === 'MMA' ? 'WH' : 'Lad', p: runner.bookmakers.ladbrokes },
-                                                                { name: 'PP', p: runner.bookmakers.paddypower }
-                                                            ];
-
-                                                            const best = books.reduce((acc, curr) => (curr.p > 1.0 && curr.p > acc.p) ? curr : acc, { name: '', p: 0 });
-                                                            bestBookPrice = best.p;
-                                                            bestBookName = best.name;
-
-                                                            if (bestBookPrice > 1.0) {
-                                                                // Formula: ((Bookie / Lay) - 1) * 100
-                                                                const edge = ((bestBookPrice / runner.exchange.lay) - 1) * 100;
-                                                                
-                                                                // COLOR LOGIC: Green if > 0, Yellow if > -0.01, else Gray
-                                                                let textColor = 'text-slate-500';
-                                                                if (edge > 0.01) textColor = 'text-emerald-400';
-                                                                else if (edge > -0.01) textColor = 'text-amber-400';
-                                                                
-                                                                const sign = edge > 0 ? '+' : '';
-
-                                                                // ALWAYS SHOW TEXT (Even if negative)
-                                                                valueText = (
-                                                                     <span className="text-[10px] text-slate-500 mt-1 font-mono block">
-                                                                         Best: <span className="text-slate-300 font-bold">{bestBookName} {bestBookPrice.toFixed(2)}</span> <span className={textColor}>({sign}{edge.toFixed(1)}%)</span>
-                                                                     </span>
-                                                                );
-
-                                                                // STRICT BORDER LOGIC (Only highlights on actual opportunities)
-                                                                if (edge > 0.01) {
-                                                                    selectionBorder = "border-l-4 border-l-emerald-500 bg-emerald-500/5";
-                                                                } else if (edge >= -0.01) {
-                                                                    selectionBorder = "border-l-4 border-l-amber-500 bg-amber-500/5";
-                                                                }
-                                                            }
-                                                        }
-
-                                                        return (
-                                                            <div key={runner.id} className={`flex flex-col md:flex-row md:items-center px-4 py-3 gap-3 ${selectionBorder}`}>
-                                                                {/* NAME */}
-                                                                <div className="md:w-1/3 flex flex-col justify-center">
-                                                                    <div className="flex items-center gap-2">
-                                                                        <span className="text-white font-medium">{runner.name}</span>
-                                                                    </div>
-                                                                    {valueText}
-                                                                </div>
-
-                                                                {/* PRICES - STRICT GRID */}
-                                                                <div className="flex flex-1 gap-2 items-center justify-start md:justify-end overflow-hidden">
-                                                                    {/* EXCHANGE GROUP */}
-                                                                    <div className="flex gap-1 flex-none">
-                                                                        <PriceBox label="BACK" price={runner.exchange.back} type="back" />
-                                                                        <PriceBox label="LAY" price={runner.exchange.lay} type="lay" />
-                                                                    </div>
-                                                                    
-                                                                    {/* DIVIDER */}
-                                                                    <div className="w-px h-8 bg-slate-800 mx-1 flex-none"></div>
-
-                                                                    {/* BOOKIES GROUP */}
-                                                                    <div className="flex gap-1 flex-none">
-                                                                        <BookieBox 
-                                                                            label="PIN" 
-                                                                            price={runner.bookmakers.pinnacle} 
-                                                                            color="orange" 
-                                                                            isBest={bestBookName === 'Pin'}
-                                                                        />
-                                                                        <BookieBox 
-                                                                            label={activeSport === 'MMA' ? "WH" : "LAD"} 
-                                                                            price={runner.bookmakers.ladbrokes} 
-                                                                            color="red" 
-                                                                            isBest={bestBookName === (activeSport === 'MMA' ? "WH" : "Lad")}
-                                                                        />
-                                                                        <BookieBox 
-                                                                            label="PP" 
-                                                                            price={runner.bookmakers.paddypower} 
-                                                                            color="green" 
-                                                                            isBest={bestBookName === 'PP'}
-                                                                        />
-                                                                    </div>
-                                                                </div>
-                                                            </div>
-                                                        );
-                                                    })}
-                                                </div>
-                                                {isPaywalled && <PaywallOverlay onUnlock={handleUnlock} />}
-                                            </div>
+                                            <MarketCard 
+                                                key={event.stable_key} 
+                                                event={event} 
+                                                activeSport={activeSport} 
+                                                isPaid={isPaid} 
+                                                isPaywalled={isPaywalled}
+                                                onUnlock={handleUnlock}
+                                            />
                                         );
                                     })}
                                 </div>
@@ -480,7 +367,7 @@ export default function Home() {
         )}
       </div>
 
-      {/* PAYMENT MODAL (UNCHANGED) */}
+      {/* PAYMENT MODAL */}
       {showPaymentModal && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
             <div className="bg-[#161F32] border border-blue-500/30 rounded-xl p-6 max-w-sm w-full shadow-2xl space-y-5 relative">
@@ -535,46 +422,183 @@ export default function Home() {
   );
 }
 
-// --- STRICT & DISCIPLINED COMPONENTS ---
+// --- NEW TRADER-GRADE COMPONENTS ---
 
-const PriceBox = ({ label, price, type }: any) => (
-    <div className={`w-[52px] h-[44px] rounded flex flex-col items-center justify-center border flex-none ${type === 'back' ? 'bg-[#0f172a] border-blue-500/30' : 'bg-[#1a0f14] border-pink-500/40'}`}>
-        <span className={`text-[9px] font-bold leading-none mb-0.5 uppercase ${type === 'back' ? 'text-blue-500' : 'text-pink-500'}`}>{label}</span>
-        <span className={`text-sm font-bold leading-none ${type === 'back' ? 'text-blue-400' : 'text-pink-400'}`}>{price ? price.toFixed(2) : '—'}</span>
-    </div>
+const ExchangeBox = ({ type, price }: { type: 'back' | 'lay'; price: number }) => (
+  <div className={`flex flex-col items-center justify-center h-full w-full rounded-sm border ${
+    type === 'back' 
+      ? 'bg-blue-950/20 border-blue-900/30' 
+      : 'bg-pink-950/20 border-pink-900/30'
+  }`}>
+    <span className={`text-[9px] font-bold uppercase leading-none mb-0.5 ${
+      type === 'back' ? 'text-blue-500/70' : 'text-pink-500/70'
+    }`}>
+      {type === 'back' ? 'B' : 'L'}
+    </span>
+    <span className={`font-mono text-sm font-bold tracking-tighter ${
+      type === 'back' ? 'text-blue-400' : 'text-pink-400'
+    }`}>
+      {formatPrice(price)}
+    </span>
+  </div>
 );
 
-const BookieBox = ({ label, price, color, isBest }: any) => {
-    // 🎨 Improved Styling: Standardized widths + Glow for Best Price
-    const gradients: any = {
-        orange: 'from-orange-900/40 to-orange-950/40 border-orange-500/30 text-orange-200',
-        red: 'from-red-900/40 to-red-950/40 border-red-500/30 text-red-200',
-        green: 'from-emerald-900/40 to-emerald-950/40 border-emerald-500/30 text-emerald-200',
-    };
-    
-    // Highlight logic: Bright border + lighter BG, NO SCALING to prevent layout shifts
-    const activeStyle = isBest 
-        ? `border-${color === 'orange' ? 'orange' : color === 'red' ? 'red' : 'emerald'}-400 bg-white/5 shadow-[0_0_10px_rgba(255,255,255,0.1)]`
-        : 'opacity-60 grayscale-[0.5]';
+const BookieBox = ({ label, price, isBest, hasEdge }: { label: string, price: number, isBest: boolean, hasEdge: boolean }) => {
+  // Visual Logic:
+  // 1. Edge = Green Background (Action Signal)
+  // 2. Best Price = Yellow Border (Target Signal)
+  // 3. Normal = Muted (Noise Reduction)
+  
+  let containerClass = "bg-slate-800/50 border-slate-700 text-slate-500";
+  if (hasEdge) containerClass = "bg-emerald-600 border-emerald-500 text-white shadow-[0_0_10px_rgba(16,185,129,0.2)]";
+  else if (isBest) containerClass = "bg-slate-800 border-yellow-500/80 text-yellow-400";
 
-    const baseStyle = gradients[color] || gradients.orange;
+  return (
+    <div className={`flex flex-col items-center justify-center h-full w-full rounded border transition-all ${containerClass}`}>
+      <span className={`text-[9px] font-bold uppercase leading-none mb-0.5 ${hasEdge ? 'text-emerald-100' : 'opacity-60'}`}>
+        {label}
+      </span>
+      <span className="font-mono text-sm font-bold tracking-tighter">
+        {formatPrice(price)}
+      </span>
+    </div>
+  );
+};
+
+const RunnerRow = ({ runner, activeSport }: { runner: any, activeSport: string }) => {
+  const books = [
+    { name: 'Pin', p: runner.bookmakers.pinnacle },
+    { name: activeSport === 'MMA' ? 'WH' : 'Lad', p: runner.bookmakers.ladbrokes },
+    { name: 'PP', p: runner.bookmakers.paddypower }
+  ];
+
+  // Find Best Bookie
+  const best = books.reduce((acc, curr) => (curr.p > 1.0 && curr.p > acc.p) ? curr : acc, { name: '', p: 0 });
+  
+  // Calc Edge
+  let edge = 0;
+  let hasEdge = false;
+  let edgeColor = 'text-slate-600';
+
+  if (runner.exchange.lay > 1.0 && best.p > 1.0) {
+    edge = ((best.p / runner.exchange.lay) - 1) * 100;
+    if (edge > 0.01) {
+      hasEdge = true;
+      edgeColor = 'text-emerald-400 font-bold';
+    } else if (edge > -0.01) {
+      edgeColor = 'text-amber-400';
+    }
+  }
+
+  return (
+    <div className="group border-b border-slate-800/50 hover:bg-slate-800/30 transition-colors last:border-0">
+      
+      {/* === MOBILE LAYOUT (Stacked) === */}
+      <div className="md:hidden py-2.5 px-3">
+        {/* Header: Name + Edge Badge */}
+        <div className="flex justify-between items-center mb-2">
+          <span className="text-slate-200 font-medium text-sm truncate pr-2">{runner.name}</span>
+          {edge !== 0 && (
+            <div className={`flex items-center gap-1.5 px-2 py-0.5 rounded ${hasEdge ? 'bg-emerald-500/10' : 'bg-slate-800'}`}>
+              <span className={`font-mono text-xs ${edgeColor}`}>
+                {edge > 0 ? '+' : ''}{edge.toFixed(1)}%
+              </span>
+            </div>
+          )}
+        </div>
+
+        {/* Execution Grid: 5 Columns (2 Exchange, 3 Bookies) */}
+        <div className="grid grid-cols-5 gap-1.5 h-11">
+           {/* Exchange Group (Left) */}
+           <div className="col-span-2 grid grid-cols-2 gap-px bg-slate-900 rounded border border-slate-800 overflow-hidden">
+             <ExchangeBox type="back" price={runner.exchange.back} />
+             <ExchangeBox type="lay" price={runner.exchange.lay} />
+           </div>
+           
+           {/* Bookies Group (Right) */}
+           <BookieBox label="PIN" price={runner.bookmakers.pinnacle} isBest={best.name === 'Pin'} hasEdge={best.name === 'Pin' && hasEdge} />
+           <BookieBox label={activeSport === 'MMA' ? "WH" : "LAD"} price={runner.bookmakers.ladbrokes} isBest={best.name === (activeSport === 'MMA' ? "WH" : "Lad")} hasEdge={best.name === (activeSport === 'MMA' ? "WH" : "Lad") && hasEdge} />
+           <BookieBox label="PP" price={runner.bookmakers.paddypower} isBest={best.name === 'PP'} hasEdge={best.name === 'PP' && hasEdge} />
+        </div>
+      </div>
+
+      {/* === DESKTOP LAYOUT (Horizontal Terminal) === */}
+      <div className="hidden md:grid grid-cols-12 items-center px-4 py-2 gap-4 h-14">
+         {/* Name (Cols 1-4) */}
+         <div className="col-span-4 flex items-center gap-2">
+            <span className="text-slate-300 font-medium text-sm truncate">{runner.name}</span>
+         </div>
+
+         {/* Edge (Col 5) */}
+         <div className="col-span-1 text-right">
+             {edge !== 0 && <span className={`font-mono text-sm ${edgeColor}`}>{edge > 0 ? '+' : ''}{edge.toFixed(1)}%</span>}
+         </div>
+
+         {/* Exchange (Cols 6-8) */}
+         <div className="col-span-3 grid grid-cols-2 gap-2 max-w-[140px] ml-auto">
+            <ExchangeBox type="back" price={runner.exchange.back} />
+            <ExchangeBox type="lay" price={runner.exchange.lay} />
+         </div>
+
+         {/* Bookies (Cols 9-12) */}
+         <div className="col-span-4 grid grid-cols-3 gap-2">
+            <BookieBox label="PIN" price={runner.bookmakers.pinnacle} isBest={best.name === 'Pin'} hasEdge={best.name === 'Pin' && hasEdge} />
+            <BookieBox label={activeSport === 'MMA' ? "WH" : "LAD"} price={runner.bookmakers.ladbrokes} isBest={best.name === (activeSport === 'MMA' ? "WH" : "Lad")} hasEdge={best.name === (activeSport === 'MMA' ? "WH" : "Lad") && hasEdge} />
+            <BookieBox label="PP" price={runner.bookmakers.paddypower} isBest={best.name === 'PP'} hasEdge={best.name === 'PP' && hasEdge} />
+         </div>
+      </div>
+    </div>
+  );
+};
+
+const MarketCard = ({ event, activeSport, isPaid, isPaywalled, onUnlock }: any) => {
+    const isSuspended = event.market_status === 'SUSPENDED';
+    const isInPlay = event.in_play;
+
+    // Status Styling
+    let statusBorder = 'border-slate-800';
+    let statusBg = 'bg-[#161F32]';
+    if (isSuspended) { statusBorder = 'border-amber-500/40'; statusBg = 'bg-amber-950/10'; }
+    if (isInPlay) { statusBorder = 'border-red-500/40'; statusBg = 'bg-red-950/10'; }
 
     return (
-        <div className={`w-[52px] h-[44px] rounded flex flex-col items-center justify-center border transition-all flex-none bg-gradient-to-b ${baseStyle} ${activeStyle}`}>
-            <span className="text-[9px] font-bold leading-none mb-0.5 uppercase opacity-90">{label}</span>
-            <span className={`text-sm font-bold leading-none ${isBest ? 'text-white' : ''}`}>{price && price > 1 ? price.toFixed(2) : '—'}</span>
+        <div className={`relative rounded-lg border ${statusBorder} ${statusBg} overflow-hidden mb-3 shadow-sm`}>
+            
+            {/* Header Strip */}
+            <div className="flex items-center justify-between px-3 py-2 bg-slate-900/50 border-b border-slate-800">
+                <div className="flex items-center gap-2">
+                   {isInPlay && <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />}
+                   <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                      {isInPlay ? 'Live In-Play' : formatTime(event.start_time)}
+                   </span>
+                </div>
+                {/* Desktop Headers (Hidden on Mobile) */}
+                <div className="hidden md:flex gap-12 text-[10px] font-bold text-slate-600 uppercase tracking-widest mr-8">
+                    <span>Edge</span>
+                    <span className="mr-8">Exchange</span>
+                    <span>Sportsbooks</span>
+                </div>
+            </div>
+
+            {/* Runners List */}
+            <div className={`bg-[#0f1522] ${isPaywalled ? 'blur-sm select-none opacity-50 pointer-events-none' : ''}`}>
+                {event.selections?.map((runner: any) => (
+                    <RunnerRow key={runner.id} runner={runner} activeSport={activeSport} />
+                ))}
+            </div>
+
+            {/* Paywall Overlay */}
+            {isPaywalled && (
+                <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-slate-900/40 backdrop-blur-[1px]">
+                    <button 
+                        onClick={onUnlock}
+                        className="bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold px-4 py-2 rounded shadow-lg border border-blue-400/50 flex items-center gap-2 transition-transform hover:scale-105"
+                    >
+                        <Lock size={12} className="text-yellow-400" />
+                        Unlock Scanner
+                    </button>
+                </div>
+            )}
         </div>
     );
 };
-
-const PaywallOverlay = ({ onUnlock }: any) => (
-    <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-slate-900/60 backdrop-blur-[2px]">
-        <button 
-            onClick={onUnlock}
-            className="bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-bold px-4 py-2 rounded-lg shadow-xl border border-blue-400/50 flex items-center gap-2 hover:scale-105 transition-all"
-        >
-            <Lock size={12} className="text-yellow-400" />
-            Unlock
-        </button>
-    </div>
-);
