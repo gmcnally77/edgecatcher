@@ -2,39 +2,45 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../utils/supabase';
 import { 
-  TrendingUp, Lock, Swords, Trophy, Dribbble, AlertCircle, Radar, 
-  Check, Copy 
+  RefreshCw, TrendingUp, Clock, Radio, Lock, Unlock, 
+  Swords, Trophy, Dribbble, AlertCircle, Copy, Check, Search,
+  Radar 
 } from 'lucide-react';
 
-// --- CONFIG ---
 const SPORTS = [
-  { id: 'MMA', label: 'MMA', icon: <Swords size={14} /> },
-  { id: 'NFL', label: 'NFL', icon: <Trophy size={14} /> },
-  { id: 'Basketball', label: 'Basketball', icon: <Dribbble size={14} /> },
+  { id: 'MMA', label: 'MMA', icon: <Swords size={16} /> },
+  { id: 'NFL', label: 'NFL', icon: <Trophy size={16} /> },
+  { id: 'Basketball', label: 'Basketball', icon: <Dribbble size={16} /> },
 ];
 
-// --- HELPER: Data Grouping & Stability ---
+// HELPER: Normalize strings
+const normalizeKey = (str: string) => 
+  str ? str.toLowerCase().replace(/[^a-z0-9]/g, '') : '';
+
+// 🚨 DATA GROUPING ENGINE (With Stable Keys)
 const groupData = (data: any[]) => {
   const competitions: Record<string, any[]> = {};
-  
-  // Sort by freshness first
+
+  // 1. FRESHNESS SORT: Process newest updates first to kill zombies
   data.sort((a, b) => new Date(b.last_updated).getTime() - new Date(a.last_updated).getTime());
 
   data.forEach(row => {
     const compName = row.competition || 'Other';
     if (!competitions[compName]) competitions[compName] = [];
     
-    // Dedup / Find existing market
+    // 2. DEDUP: Find existing by ID or Fuzzy Name Match
     let market = competitions[compName].find(m => 
         m.id === row.market_id || 
         (m.name === row.event_name && Math.abs(new Date(m.start_time).getTime() - new Date(row.start_time).getTime()) < 3600000)
     );
 
     if (!market) {
-        // Stable key for React rendering
+        // 🛑 STABLE KEY GENERATION (The Fix for Jumping UI)
+        const stableKey = `${row.event_name}_${row.start_time}`;
+
         market = {
             id: row.market_id,
-            stable_key: `${row.event_name}_${row.start_time}`,
+            stable_key: stableKey, // <--- Used for React Keys
             name: row.event_name,
             start_time: row.start_time,
             volume: row.volume,
@@ -43,8 +49,8 @@ const groupData = (data: any[]) => {
             selections: []
         };
         competitions[compName].push(market);
-    } else if (market.id !== row.market_id) {
-        return; // Skip duplicates
+    } else {
+        if (market.id !== row.market_id) return; // Ignore duplicate/zombie row
     }
 
     market.selections.push({
@@ -59,77 +65,44 @@ const groupData = (data: any[]) => {
     });
   });
 
-  // Sort competitions and markets
+  // 3. STABLE SORT: Force strict order by Time -> Name
   Object.keys(competitions).forEach(key => {
       competitions[key].sort((a, b) => {
+          // Rule 1: Live games first
           if (a.in_play && !b.in_play) return -1;
           if (!a.in_play && b.in_play) return 1;
+
+          // Rule 2: Start Time (Soonest first)
           const timeDiff = new Date(a.start_time).getTime() - new Date(b.start_time).getTime();
-          return timeDiff !== 0 ? timeDiff : a.name.localeCompare(b.name);
+          if (timeDiff !== 0) return timeDiff;
+
+          // Rule 3: Alphabetical (Tie-breaker)
+          return a.name.localeCompare(b.name);
       });
+      
+      // Sort Selections A-Z
       competitions[key].forEach(market => {
           market.selections.sort((a: any, b: any) => a.name.localeCompare(b.name));
       });
   });
+
   return competitions;
 };
-
-// --- COMPONENTS: Optimized for Mobile ---
-
-const PriceBox = ({ label, price, type }: any) => (
-    <div className={`w-[46px] h-[38px] rounded flex flex-col items-center justify-center border flex-none ${type === 'back' ? 'bg-blue-500/10 border-blue-500/30' : 'bg-pink-500/10 border-pink-500/30'}`}>
-        <span className={`text-[8px] font-bold leading-none mb-0.5 uppercase ${type === 'back' ? 'text-blue-400' : 'text-pink-400'}`}>{label}</span>
-        <span className={`text-xs font-mono font-bold leading-none ${type === 'back' ? 'text-blue-300' : 'text-pink-300'}`}>{price ? price.toFixed(2) : '—'}</span>
-    </div>
-);
-
-const BookieBox = ({ label, price, color, isBest }: any) => {
-    const gradients: any = {
-        orange: 'from-orange-950/40 to-orange-900/20 border-orange-500/30 text-orange-200',
-        red: 'from-red-950/40 to-red-900/20 border-red-500/30 text-red-200',
-        green: 'from-emerald-950/40 to-emerald-900/20 border-emerald-500/30 text-emerald-200',
-    };
-    const activeStyle = isBest 
-        ? `border-${color === 'orange' ? 'orange' : color === 'red' ? 'red' : 'emerald'}-400/80 bg-white/5 ring-1 ring-inset ring-white/10`
-        : 'opacity-40 grayscale-[0.5]';
-
-    return (
-        <div className={`w-[46px] h-[38px] rounded flex flex-col items-center justify-center border transition-all flex-none bg-gradient-to-b ${gradients[color] || gradients.orange} ${activeStyle}`}>
-            <span className="text-[8px] font-bold leading-none mb-0.5 uppercase">{label}</span>
-            <span className={`text-xs font-mono font-bold leading-none ${isBest ? 'text-white' : ''}`}>{price && price > 1 ? price.toFixed(2) : '—'}</span>
-        </div>
-    );
-};
-
-const PaywallOverlay = ({ onUnlock }: any) => (
-    <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-slate-900/60 backdrop-blur-[2px]">
-        <button onClick={onUnlock} className="bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-bold px-4 py-2 rounded-lg shadow-xl border border-blue-400/50 flex items-center gap-2 hover:scale-105 transition-all">
-            <Lock size={12} className="text-yellow-400" /> Unlock
-        </button>
-    </div>
-);
-
-// --- MAIN PAGE ---
 
 export default function Home() {
   const [activeSport, setActiveSport] = useState('Basketball');
   const [competitions, setCompetitions] = useState<Record<string, any[]>>({});
   const [loading, setLoading] = useState(true);
+  const [lastUpdated, setLastUpdated] = useState<string>('');
+  const [searchQuery, setSearchQuery] = useState('');
   
-  // Auth/Payment State
+  // PAYWALL STATE
   const [isPaid, setIsPaid] = useState(false);
   const [trialTimeLeft, setTrialTimeLeft] = useState<string>('');
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [paymentRef, setPaymentRef] = useState('');
   const [copied, setCopied] = useState(false);
-
-  // Environment Guard
-  const SCOPE_MODE = process.env.NEXT_PUBLIC_SCOPE_MODE || "";
-  const visibleSports = SCOPE_MODE.startsWith("NBA_PREMATCH_ML") 
-    ? SPORTS.filter(s => s.id === 'Basketball' || s.id === 'MMA') 
-    : SPORTS;
-
-  // --- EFFECT: Trial Timer ---
+  
   useEffect(() => {
     const timer = setInterval(() => {
         const start = typeof window !== 'undefined' ? localStorage.getItem('trial_start') : null;
@@ -144,7 +117,7 @@ export default function Home() {
             } else {
                 const h = Math.floor(diff / 3600000);
                 const m = Math.floor((diff % 3600000) / 60000);
-                setTrialTimeLeft(`${h}h ${m}m`);
+                setTrialTimeLeft(`${h}h ${m}m remaining`);
             }
         } else {
             setTrialTimeLeft('');
@@ -153,20 +126,53 @@ export default function Home() {
     return () => clearInterval(timer);
   }, []);
 
-  // --- EFFECT: Initial Auth Check ---
   useEffect(() => {
     const paidStatus = typeof window !== 'undefined' && localStorage.getItem('paid') === 'true';
     const trialStart = typeof window !== 'undefined' ? localStorage.getItem('trial_start') : null;
     const isTrialValid = trialStart && (Date.now() - parseInt(trialStart) < 24 * 60 * 60 * 1000);
     setIsPaid(paidStatus || !!isTrialValid);
-    
-    // Auto-select sport based on scope
+    supabase.from('app_events').insert({ 
+        event: 'page_view',
+        metadata: { 
+            ua: typeof navigator !== 'undefined' ? navigator.userAgent : 'bot',
+            ref: typeof document !== 'undefined' ? document.referrer : ''
+        }
+    }).then(() => {});
+  }, []);
+
+  const handleUnlock = () => {
+    setPaymentRef(`NBA-${Math.floor(1000 + Math.random() * 9000)}`);
+    setShowPaymentModal(true);
+  };
+  const handleConfirmPayment = () => {
+    localStorage.setItem('paid', 'true');
+    setIsPaid(true);
+    setShowPaymentModal(false);
+  };
+  const handleCopyLink = () => {
+    navigator.clipboard.writeText("https://revolut.me/gerardq0w5");
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+  const handleActivateTrial = () => {
+    localStorage.setItem('trial_start', Date.now().toString());
+    setIsPaid(true);
+    setShowPaymentModal(false);
+    supabase.from('app_events').insert({ event: 'trial_activated' }).then(() => {});
+  };
+
+  const SCOPE_MODE = process.env.NEXT_PUBLIC_SCOPE_MODE || "";
+
+  const visibleSports = SCOPE_MODE.startsWith("NBA_PREMATCH_ML") 
+    ? SPORTS.filter(s => s.id === 'Basketball' || s.id === 'MMA') 
+    : SPORTS;
+
+  useEffect(() => {
     if (SCOPE_MODE.startsWith("NBA_PREMATCH_ML") && activeSport !== 'Basketball' && activeSport !== 'MMA') {
       setActiveSport('Basketball');
     }
   }, []);
 
-  // --- DATA FETCHING ---
   const fetchPrices = async () => {
     const dbCutoff = new Date();
     dbCutoff.setHours(dbCutoff.getHours() - 24); 
@@ -175,16 +181,30 @@ export default function Home() {
       .from('market_feed')
       .select('*')
       .eq('sport', activeSport)
-      .gt('start_time', dbCutoff.toISOString());
+      .gt('start_time', dbCutoff.toISOString())
+      .order('start_time', { ascending: true });
 
     if (!error && data) {
       const now = new Date();
+      // Relaxed heartbeat to prevent blank screen if data is slightly old
+      const heartbeatCutoff = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+
       const activeRows = data.filter((row: any) => {
+        if (row.last_updated && new Date(row.last_updated) < heartbeatCutoff) return false;
         if (row.market_status === 'CLOSED' || row.market_status === 'SETTLED') return false;
         if (SCOPE_MODE.startsWith('NBA_PREMATCH_ML') && (row.in_play || new Date(row.start_time) <= now)) return false;
         return true; 
       });
-      setCompetitions(groupData(activeRows));
+
+      try {
+          const grouped = groupData(activeRows);
+          setCompetitions(grouped);
+          const latestTs = activeRows.reduce((max: number, r: any) => {
+              const ts = r.last_updated ? new Date(r.last_updated).getTime() : 0;
+              return ts > max ? ts : max;
+          }, 0);
+          if (latestTs > 0) setLastUpdated(new Date(latestTs).toLocaleTimeString());
+      } catch (e) { console.error(e); }
     }
     setLoading(false);
   };
@@ -193,84 +213,82 @@ export default function Home() {
     setCompetitions({});
     setLoading(true);
     fetchPrices();
-    const interval = setInterval(fetchPrices, 5000); // 5s Refresh
+    const interval = setInterval(fetchPrices, 1000); 
     return () => clearInterval(interval);
   }, [activeSport]);
 
-  // --- HANDLERS ---
-  const handleUnlock = () => {
-    setPaymentRef(`PRO-${Math.floor(1000 + Math.random() * 9000)}`);
-    setShowPaymentModal(true);
-  };
-
-  const handleConfirmPayment = () => {
-    localStorage.setItem('paid', 'true');
-    setIsPaid(true);
-    setShowPaymentModal(false);
-  };
-
-  const handleActivateTrial = () => {
-    localStorage.setItem('trial_start', Date.now().toString());
-    setIsPaid(true);
-    setShowPaymentModal(false);
-  };
-
-  const handleCopyLink = () => {
-    navigator.clipboard.writeText("https://revolut.me/gerardq0w5");
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
-  const formatTime = (iso: string) => {
-    if (!iso) return '';
-    return new Date(iso).toLocaleDateString('en-GB', { 
+  const formatTime = (isoString: string) => {
+    if (!isoString) return '';
+    return new Date(isoString).toLocaleDateString('en-GB', { 
         weekday: 'short', hour: '2-digit', minute: '2-digit' 
     });
   };
 
-  // --- RENDER ---
+  const formatPrice = (price: number | null) => {
+      if (!price || price <= 1.0) return '—';
+      return price.toFixed(2);
+  };
+
   return (
-    <div className="min-h-screen bg-[#0B1120] text-slate-300 font-sans">
+    <div className="min-h-screen bg-[#0B1120] text-slate-300 font-sans selection:bg-blue-500/30 selection:text-blue-200">
       
-      {/* HEADER: Condensed & Search Removed */}
-      <div className="sticky top-0 z-50 bg-[#0B1120]/95 backdrop-blur-md border-b border-slate-800 shadow-md">
-        <div className="max-w-7xl mx-auto px-4 py-3">
-            <div className="flex justify-between items-center mb-3">
-                {/* Brand */}
-                <div className="flex items-center gap-2">
-                    <div className="bg-blue-600 p-1.5 rounded-lg shadow-lg shadow-blue-900/20">
-                        <TrendingUp className="text-white" size={16} />
+      {/* HEADER SECTION */}
+      <div className="sticky top-0 z-50 bg-[#0B1120]/95 backdrop-blur-md border-b border-slate-800 shadow-xl">
+        <div className="max-w-7xl mx-auto px-4 pt-4 pb-2">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-4 gap-4">
+                
+                {/* BRANDING */}
+                <div className="flex items-center gap-3">
+                    <div className="bg-gradient-to-br from-blue-600 to-blue-800 p-2.5 rounded-xl border border-blue-400/20 shadow-lg shadow-blue-900/20">
+                        <TrendingUp className="text-white" size={20} strokeWidth={3} />
                     </div>
-                    <div>
-                        <div className="flex items-center gap-2">
-                            <span className="text-lg font-bold text-white tracking-tight leading-none">EdgeScanner</span>
-                            <span className="text-[9px] font-bold text-yellow-400 bg-yellow-400/10 px-1.5 rounded border border-yellow-400/20">PRO</span>
+                    <div className="flex flex-col">
+                        <span className="block text-xl font-bold text-white tracking-tight leading-none">
+                            EdgeScanner
+                        </span>
+                        <div className="flex items-center gap-2 mt-0.5">
+                            {/* GOLD PRO BADGE */}
+                            <span className="text-[10px] uppercase font-bold text-yellow-400 tracking-widest bg-yellow-400/10 px-1.5 rounded border border-yellow-400/20">
+                                PRO
+                            </span>
+                            {!isPaid && (
+                                <span className="text-[10px] text-slate-500 flex items-center gap-1">
+                                    <Lock size={10} /> Limited View
+                                </span>
+                            )}
                         </div>
                     </div>
                 </div>
+                
+                {/* CONTROLS */}
+                <div className="flex items-center gap-3 w-full md:w-auto">
+                    {/* LIVE INDICATOR */}
+                    <div className="bg-[#161F32] px-3 py-1.5 rounded-lg border border-slate-700/50 flex items-center gap-2">
+                        <Radar size={12} className="text-blue-400 animate-pulse" />
+                        <span className="text-xs font-bold text-blue-100 uppercase tracking-wide">Live Scanner</span>
+                    </div>
 
-                {/* Status Indicator */}
-                <div className="flex items-center gap-3">
+                    {/* FREE PASS STATUS */}
                     {trialTimeLeft && (
-                        <div className="hidden sm:flex flex-col items-end leading-none">
-                             <span className="text-[9px] font-bold text-emerald-400 uppercase">Trial Active</span>
-                             <span className="text-[10px] font-mono text-emerald-500/80">{trialTimeLeft}</span>
+                        <div className="hidden md:flex flex-col items-end">
+                             <span className="text-[9px] font-bold text-emerald-400 uppercase tracking-wider">
+                                Trial Active
+                            </span>
+                             <span className="text-[10px] font-mono text-emerald-500/80">
+                                {trialTimeLeft}
+                            </span>
                         </div>
                     )}
-                    <div className="flex items-center gap-2 bg-[#161F32] px-2 py-1 rounded border border-slate-700/50">
-                        <Radar size={12} className="text-blue-400 animate-pulse" />
-                        <span className="text-[10px] font-bold text-blue-100 uppercase tracking-tight">Live</span>
-                    </div>
                 </div>
             </div>
 
-            {/* Tabs */}
-            <div className="flex gap-6 overflow-x-auto no-scrollbar border-b border-transparent">
+            {/* SPORT TABS */}
+            <div className="flex gap-6 border-b border-transparent overflow-x-auto no-scrollbar">
                 {visibleSports.map((sport) => (
                     <button 
                         key={sport.id} 
                         onClick={() => setActiveSport(sport.id)} 
-                        className={`flex items-center gap-2 pb-2 text-xs font-bold transition-all border-b-2 whitespace-nowrap ${
+                        className={`flex items-center gap-2 pb-3 text-sm font-bold transition-all border-b-2 whitespace-nowrap ${
                             activeSport === sport.id 
                                 ? 'text-white border-blue-500' 
                                 : 'text-slate-500 border-transparent hover:text-slate-300'
@@ -283,123 +301,193 @@ export default function Home() {
         </div>
       </div>
 
-      {/* MAIN CONTENT */}
-      <div className="max-w-7xl mx-auto px-4 py-4 space-y-6">
+      <div className="max-w-7xl mx-auto px-4 py-6 space-y-6">
         
+        {/* SEARCH BAR */}
+        <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
+            <input 
+                type="text"
+                placeholder={`Find a ${activeSport === 'MMA' ? 'fight' : 'game'}...`}
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full bg-[#161F32] border border-slate-700 rounded-lg py-3 pl-10 pr-4 text-sm text-white focus:outline-none focus:border-blue-500 transition-colors"
+            />
+        </div>
+
         {loading && Object.keys(competitions).length === 0 && (
             <div className="flex justify-center py-20">
-                <Radar size={40} className="animate-spin text-blue-500 opacity-20" />
+                <RefreshCw size={40} className="animate-spin text-blue-500" />
             </div>
         )}
 
-        <div className="space-y-6">
-            {Object.entries(competitions).map(([compName, markets], compIdx) => (
-                <div key={compName}>
-                    <h2 className="text-white font-bold text-sm mb-3 flex items-center gap-2 px-1">
-                        <span className="w-1 h-4 bg-blue-500 rounded-full"></span> {compName}
-                    </h2>
-                    
-                    <div className="space-y-3">
-                        {markets.map((event: any, eventIdx: any) => {
-                            // Paywall Logic: Free users see only 1st competition, first 2 games
-                            const isPaywalled = !isPaid && (compIdx > 0 || eventIdx >= 2);
-                            
-                            return (
-                                <div key={event.stable_key} className="bg-[#161F32] border border-slate-700/50 rounded-xl overflow-hidden relative shadow-sm">
-                                    {/* Event Header */}
-                                    <div className="bg-[#0f1522]/50 px-3 py-2 border-b border-slate-800 flex justify-between items-center">
-                                        <h3 className="text-slate-300 font-bold text-[11px] truncate pr-4">{event.name}</h3>
-                                        <span className="text-[10px] text-slate-500 font-mono whitespace-nowrap">
-                                            {event.in_play ? <span className="text-red-500 font-bold">LIVE</span> : formatTime(event.start_time)}
-                                        </span>
-                                    </div>
-                                    
-                                    {/* Selections List */}
-                                    <div className={`divide-y divide-slate-800/50 ${isPaywalled ? 'blur-md select-none opacity-40 pointer-events-none' : ''}`}>
-                                        {event.selections?.map((runner: any) => {
-                                            
-                                            // Calculate Best Price & Edge
-                                            const books = [
-                                                { name: 'Pin', p: runner.bookmakers.pinnacle },
-                                                { name: activeSport === 'MMA' ? 'WH' : 'Lad', p: runner.bookmakers.ladbrokes },
-                                                { name: 'PP', p: runner.bookmakers.paddypower }
-                                            ];
-                                            const best = books.reduce((acc, curr) => (curr.p > 1.0 && curr.p > acc.p) ? curr : acc, { name: '', p: 0 });
-                                            
-                                            let edge = 0;
-                                            if (runner.exchange.lay > 1.0 && best.p > 1.0) {
-                                                edge = ((best.p / runner.exchange.lay) - 1) * 100;
-                                            }
+        {/* --- MAIN CONTENT (SCANNER ONLY) --- */}
+        {(() => { 
+            let globalGameIndex = 0; 
+            
+            const filterMarkets = (markets: any[]) => markets.filter(m => 
+                m.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                m.selections.some((s: any) => s.name.toLowerCase().includes(searchQuery.toLowerCase()))
+            );
 
-                                            // Row Styling
-                                            const hasEdge = edge > 0.01;
-                                            const rowHighlight = hasEdge ? 'border-l-2 border-emerald-500 bg-emerald-500/5' : 'border-l-2 border-transparent';
+            // ============================================
+            // MODE: SCANNER LIST (Detailed)
+            // ============================================
+            return (
+                <div className="space-y-8">
+                    {Object.entries(competitions).map(([compName, markets]) => {
+                        const filtered = filterMarkets(markets);
+                        if (filtered.length === 0) return null;
 
-                                            return (
-                                                <div key={runner.id} className={`flex items-center px-3 py-2 justify-between gap-2 ${rowHighlight}`}>
-                                                    
-                                                    {/* LEFT: Info */}
-                                                    <div className="min-w-0 flex-1">
-                                                        <span className="text-white text-[13px] font-bold truncate block">{runner.name}</span>
-                                                        {best.p > 0 && (
-                                                            <div className="mt-0.5 flex items-center gap-1.5">
-                                                                <span className="text-[10px] text-slate-500 font-mono">
-                                                                    Best: <span className="text-slate-300">{best.p.toFixed(2)}</span>
-                                                                </span>
-                                                                {/* Only show edge % if relevant */}
-                                                                <span className={`text-[10px] font-mono ${edge > 0 ? 'text-emerald-400 font-bold' : 'text-slate-600'}`}>
-                                                                    ({edge > 0 ? '+' : ''}{edge.toFixed(1)}%)
-                                                                </span>
-                                                            </div>
-                                                        )}
-                                                    </div>
+                        return (
+                            <div key={compName}>
+                                <h2 className="text-white font-bold text-lg mb-4 flex items-center gap-2">
+                                    <span className="w-1 h-6 bg-blue-500 rounded-full"></span> {compName}
+                                </h2>
+                                <div className="space-y-4">
+                                    {filtered.map((event: any) => {
+                                        const isPaywalled = !isPaid && globalGameIndex >= 3;
+                                        globalGameIndex++;
+                                        
+                                        const isSuspended = event.market_status === 'SUSPENDED';
+                                        const isInPlay = event.in_play;
+                                        let borderClass = 'border-slate-700/50';
+                                        if (isSuspended) borderClass = 'border-yellow-500/50';
+                                        else if (isInPlay) borderClass = 'border-red-500/50';
 
-                                                    {/* RIGHT: Compact Grid */}
-                                                    <div className="flex items-center gap-1.5">
-                                                        <div className="flex gap-1">
-                                                            <PriceBox label="B" price={runner.exchange.back} type="back" />
-                                                            <PriceBox label="L" price={runner.exchange.lay} type="lay" />
-                                                        </div>
-                                                        
-                                                        <div className="w-px h-6 bg-slate-800 mx-0.5" />
-
-                                                        <div className="flex gap-1">
-                                                            <BookieBox label="PIN" price={runner.bookmakers.pinnacle} color="orange" isBest={best.name === 'Pin'} />
-                                                            <BookieBox label={activeSport === 'MMA' ? "WH" : "LAD"} price={runner.bookmakers.ladbrokes} color="red" isBest={best.name === (activeSport === 'MMA' ? 'WH' : 'Lad')} />
-                                                            <BookieBox label="PP" price={runner.bookmakers.paddypower} color="green" isBest={best.name === 'PP'} />
-                                                        </div>
+                                        return (
+                                            // 🛑 STABLE KEY
+                                            <div key={event.stable_key} className={`bg-[#161F32] border ${borderClass} rounded-xl overflow-hidden relative`}>
+                                                <div className="bg-[#0f1522] px-4 py-3 border-b border-slate-800 flex justify-between items-center">
+                                                    <h3 className="text-slate-200 font-bold text-sm">{event.name}</h3>
+                                                    <div className="flex gap-2 text-xs text-slate-500">
+                                                        {isInPlay ? <span className="text-red-500 font-bold">LIVE</span> : formatTime(event.start_time)}
                                                     </div>
                                                 </div>
-                                            );
-                                        })}
-                                    </div>
-                                    {isPaywalled && <PaywallOverlay onUnlock={handleUnlock} />}
-                                </div>
-                            );
-                        })}
-                    </div>
-                </div>
-            ))}
-        </div>
+                                                
+                                                <div className={`divide-y divide-slate-800 ${isPaywalled ? 'blur-sm select-none opacity-40 pointer-events-none' : ''}`}>
+                                                    {event.selections?.map((runner: any) => {
+                                                        
+                                                        // RESTORED & FIXED VALUE LOGIC
+                                                        let selectionBorder = "border-transparent";
+                                                        let bestBookPrice = 0;
+                                                        let bestBookName = "";
+                                                        let valueText = null;
 
-        {/* Empty State */}
-        {!loading && Object.keys(competitions).length === 0 && (
-             <div className="flex flex-col items-center justify-center py-24 text-slate-600">
+                                                        if (runner.exchange.lay > 1.0) {
+                                                            const books = [
+                                                                { name: 'Pin', p: runner.bookmakers.pinnacle },
+                                                                { name: activeSport === 'MMA' ? 'WH' : 'Lad', p: runner.bookmakers.ladbrokes },
+                                                                { name: 'PP', p: runner.bookmakers.paddypower }
+                                                            ];
+
+                                                            const best = books.reduce((acc, curr) => (curr.p > 1.0 && curr.p > acc.p) ? curr : acc, { name: '', p: 0 });
+                                                            bestBookPrice = best.p;
+                                                            bestBookName = best.name;
+
+                                                            if (bestBookPrice > 1.0) {
+                                                                // Formula: ((Bookie / Lay) - 1) * 100
+                                                                const edge = ((bestBookPrice / runner.exchange.lay) - 1) * 100;
+                                                                
+                                                                // COLOR LOGIC: Green if > 0, Yellow if > -0.01, else Gray
+                                                                let textColor = 'text-slate-500';
+                                                                if (edge > 0.01) textColor = 'text-emerald-400';
+                                                                else if (edge > -0.01) textColor = 'text-amber-400';
+                                                                
+                                                                const sign = edge > 0 ? '+' : '';
+
+                                                                // ALWAYS SHOW TEXT (Even if negative)
+                                                                valueText = (
+                                                                     <span className="text-[10px] text-slate-500 mt-1 font-mono block">
+                                                                         Best: <span className="text-slate-300 font-bold">{bestBookName} {bestBookPrice.toFixed(2)}</span> <span className={textColor}>({sign}{edge.toFixed(1)}%)</span>
+                                                                     </span>
+                                                                );
+
+                                                                // STRICT BORDER LOGIC (Only highlights on actual opportunities)
+                                                                if (edge > 0.01) {
+                                                                    selectionBorder = "border-l-4 border-l-emerald-500 bg-emerald-500/5";
+                                                                } else if (edge >= -0.01) {
+                                                                    selectionBorder = "border-l-4 border-l-amber-500 bg-amber-500/5";
+                                                                }
+                                                            }
+                                                        }
+
+                                                        return (
+                                                            <div key={runner.id} className={`flex flex-col md:flex-row md:items-center px-4 py-3 gap-3 ${selectionBorder}`}>
+                                                                {/* NAME */}
+                                                                <div className="md:w-1/3 flex flex-col justify-center">
+                                                                    <div className="flex items-center gap-2">
+                                                                        <span className="text-white font-medium">{runner.name}</span>
+                                                                    </div>
+                                                                    {valueText}
+                                                                </div>
+
+                                                                {/* PRICES - STRICT GRID */}
+                                                                <div className="flex flex-1 gap-2 items-center justify-start md:justify-end overflow-hidden">
+                                                                    {/* EXCHANGE GROUP */}
+                                                                    <div className="flex gap-1 flex-none">
+                                                                        <PriceBox label="BACK" price={runner.exchange.back} type="back" />
+                                                                        <PriceBox label="LAY" price={runner.exchange.lay} type="lay" />
+                                                                    </div>
+                                                                    
+                                                                    {/* DIVIDER */}
+                                                                    <div className="w-px h-8 bg-slate-800 mx-1 flex-none"></div>
+
+                                                                    {/* BOOKIES GROUP */}
+                                                                    <div className="flex gap-1 flex-none">
+                                                                        <BookieBox 
+                                                                            label="PIN" 
+                                                                            price={runner.bookmakers.pinnacle} 
+                                                                            color="orange" 
+                                                                            isBest={bestBookName === 'Pin'}
+                                                                        />
+                                                                        <BookieBox 
+                                                                            label={activeSport === 'MMA' ? "WH" : "LAD"} 
+                                                                            price={runner.bookmakers.ladbrokes} 
+                                                                            color="red" 
+                                                                            isBest={bestBookName === (activeSport === 'MMA' ? "WH" : "Lad")}
+                                                                        />
+                                                                        <BookieBox 
+                                                                            label="PP" 
+                                                                            price={runner.bookmakers.paddypower} 
+                                                                            color="green" 
+                                                                            isBest={bestBookName === 'PP'}
+                                                                        />
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                                {isPaywalled && <PaywallOverlay onUnlock={handleUnlock} />}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+            );
+        })()}
+        
+        {/* EMPTY STATE */}
+        {Object.keys(competitions).length === 0 && !loading && (
+            <div className="flex flex-col items-center justify-center py-24 text-slate-600">
                 <AlertCircle size={48} className="mb-4 opacity-20" />
-                <p className="text-lg font-medium">No active markets found</p>
+                <p className="text-lg font-medium">No active markets found for {activeSport}</p>
             </div>
         )}
       </div>
 
-      {/* PAYMENT MODAL */}
+      {/* PAYMENT MODAL (UNCHANGED) */}
       {showPaymentModal && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-            <div className="bg-[#161F32] border border-blue-500/30 rounded-xl p-6 max-w-sm w-full shadow-2xl space-y-5">
+            <div className="bg-[#161F32] border border-blue-500/30 rounded-xl p-6 max-w-sm w-full shadow-2xl space-y-5 relative">
                 <div className="text-center space-y-1">
                     <h3 className="text-white font-bold text-lg leading-tight">Unlock Full Scanner</h3>
                     <p className="text-blue-400 font-mono font-bold text-lg">£5 / week</p>
                 </div>
-                
                 <button 
                     onClick={handleActivateTrial}
                     className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 rounded-lg shadow-lg border border-emerald-400/50 flex flex-col items-center justify-center gap-0.5 transition-all group"
@@ -407,18 +495,16 @@ export default function Home() {
                     <span className="text-sm group-hover:scale-105 transition-transform">ACTIVATE 24H FREE PASS</span>
                     <span className="text-[10px] opacity-90 font-medium text-emerald-100">No payment needed. Instant access.</span>
                 </button>
-
                 <div className="flex items-center justify-center gap-2 py-1 opacity-60">
                     <div className="h-px bg-slate-700 w-8"></div>
                     <span className="text-[9px] uppercase text-slate-500 font-bold">OR PAY FOR LIFETIME</span>
                     <div className="h-px bg-slate-700 w-8"></div>
                 </div>
-
-                <div className="bg-[#0B1120] p-4 rounded-lg text-sm text-slate-300 space-y-3 border border-slate-800 opacity-80">
+                <div className="bg-[#0B1120] p-4 rounded-lg text-sm text-slate-300 space-y-3 border border-slate-800 opacity-80 hover:opacity-100 transition-opacity">
                     <div className="leading-relaxed">
                         <span className="font-bold text-white block mb-1">1) Pay £5 on Revolut:</span>
                         <div className="mb-2 bg-black/30 border border-slate-700/50 rounded px-2 py-1 inline-block">
-                            <span className="text-xs text-slate-400 mr-2">Ref:</span>
+                            <span className="text-xs text-slate-400 mr-2">Payment Ref:</span>
                             <span className="font-mono font-bold text-white select-all">{paymentRef}</span>
                         </div>
                         <div className="flex items-center gap-2 flex-wrap">
@@ -432,13 +518,12 @@ export default function Home() {
                         </div>
                     </div>
                     <div className="leading-relaxed">
-                        <span className="font-bold text-white block">2) DM @NBA_steamers</span>
+                        <span className="font-bold text-white block">2) Then DM @NBA_steamers</span>
                         <a href="https://t.me/NBA_steamers" target="_blank" rel="noreferrer" className="mt-3 flex items-center justify-center w-full bg-[#229ED9] hover:bg-[#1f8rbc] text-white font-bold py-3 rounded-lg shadow-md transition-all text-xs">
                             DM on Telegram
                         </a>
                     </div>
                 </div>
-
                 <div className="flex flex-col gap-3 pt-2">
                     <button onClick={handleConfirmPayment} className="bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-lg w-full transition-all shadow-lg border border-blue-500/50">I’VE PAID — UNLOCK</button>
                     <button onClick={() => setShowPaymentModal(false)} className="text-slate-500 hover:text-white font-medium text-xs py-2 uppercase tracking-wide transition-colors">Not now</button>
@@ -449,3 +534,47 @@ export default function Home() {
     </div>
   );
 }
+
+// --- STRICT & DISCIPLINED COMPONENTS ---
+
+const PriceBox = ({ label, price, type }: any) => (
+    <div className={`w-[52px] h-[44px] rounded flex flex-col items-center justify-center border flex-none ${type === 'back' ? 'bg-[#0f172a] border-blue-500/30' : 'bg-[#1a0f14] border-pink-500/40'}`}>
+        <span className={`text-[9px] font-bold leading-none mb-0.5 uppercase ${type === 'back' ? 'text-blue-500' : 'text-pink-500'}`}>{label}</span>
+        <span className={`text-sm font-bold leading-none ${type === 'back' ? 'text-blue-400' : 'text-pink-400'}`}>{price ? price.toFixed(2) : '—'}</span>
+    </div>
+);
+
+const BookieBox = ({ label, price, color, isBest }: any) => {
+    // 🎨 Improved Styling: Standardized widths + Glow for Best Price
+    const gradients: any = {
+        orange: 'from-orange-900/40 to-orange-950/40 border-orange-500/30 text-orange-200',
+        red: 'from-red-900/40 to-red-950/40 border-red-500/30 text-red-200',
+        green: 'from-emerald-900/40 to-emerald-950/40 border-emerald-500/30 text-emerald-200',
+    };
+    
+    // Highlight logic: Bright border + lighter BG, NO SCALING to prevent layout shifts
+    const activeStyle = isBest 
+        ? `border-${color === 'orange' ? 'orange' : color === 'red' ? 'red' : 'emerald'}-400 bg-white/5 shadow-[0_0_10px_rgba(255,255,255,0.1)]`
+        : 'opacity-60 grayscale-[0.5]';
+
+    const baseStyle = gradients[color] || gradients.orange;
+
+    return (
+        <div className={`w-[52px] h-[44px] rounded flex flex-col items-center justify-center border transition-all flex-none bg-gradient-to-b ${baseStyle} ${activeStyle}`}>
+            <span className="text-[9px] font-bold leading-none mb-0.5 uppercase opacity-90">{label}</span>
+            <span className={`text-sm font-bold leading-none ${isBest ? 'text-white' : ''}`}>{price && price > 1 ? price.toFixed(2) : '—'}</span>
+        </div>
+    );
+};
+
+const PaywallOverlay = ({ onUnlock }: any) => (
+    <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-slate-900/60 backdrop-blur-[2px]">
+        <button 
+            onClick={onUnlock}
+            className="bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-bold px-4 py-2 rounded-lg shadow-xl border border-blue-400/50 flex items-center gap-2 hover:scale-105 transition-all"
+        >
+            <Lock size={12} className="text-yellow-400" />
+            Unlock
+        </button>
+    </div>
+);
