@@ -235,7 +235,7 @@ export default function Home() {
       {/* HEADER SECTION */}
       <div className="sticky top-0 z-50 bg-[#0B1120]/95 backdrop-blur-md border-b border-slate-800 shadow-xl">
         <div className="max-w-7xl mx-auto px-4 pt-4 pb-2">
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-4 gap-4">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-2 md:mb-4 gap-4">
                 
                 {/* BRANDING */}
                 <div className="flex items-center gap-3">
@@ -283,7 +283,7 @@ export default function Home() {
             </div>
 
             {/* SPORT TABS */}
-            <div className="flex gap-6 border-b border-transparent overflow-x-auto no-scrollbar">
+            <div className="flex gap-6 border-b border-transparent overflow-x-auto no-scrollbar touch-pan-x">
                 {visibleSports.map((sport) => (
                     <button 
                         key={sport.id} 
@@ -301,19 +301,9 @@ export default function Home() {
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-4 py-6 space-y-6">
+      <div className="max-w-7xl mx-auto px-4 py-4 md:py-6 space-y-6">
         
-        {/* SEARCH BAR */}
-        <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
-            <input 
-                type="text"
-                placeholder={`Find a ${activeSport === 'MMA' ? 'fight' : 'game'}...`}
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full bg-[#161F32] border border-slate-700 rounded-lg py-3 pl-10 pr-4 text-sm text-white focus:outline-none focus:border-blue-500 transition-colors"
-            />
-        </div>
+        {/* SEARCH BAR (REMOVED) */}
 
         {loading && Object.keys(competitions).length === 0 && (
             <div className="flex justify-center py-20">
@@ -358,7 +348,7 @@ export default function Home() {
                                         return (
                                             // 🛑 STABLE KEY
                                             <div key={event.stable_key} className={`bg-[#161F32] border ${borderClass} rounded-xl overflow-hidden relative`}>
-                                                <div className="bg-[#0f1522] px-4 py-3 border-b border-slate-800 flex justify-between items-center">
+                                                <div className="bg-[#0f1522] px-3 py-3 md:px-4 border-b border-slate-800 flex justify-between items-center">
                                                     <h3 className="text-slate-200 font-bold text-sm">{event.name}</h3>
                                                     <div className="flex gap-2 text-xs text-slate-500">
                                                         {isInPlay ? <span className="text-red-500 font-bold">LIVE</span> : formatTime(event.start_time)}
@@ -398,7 +388,7 @@ export default function Home() {
 
                                                                 // ALWAYS SHOW TEXT (Even if negative)
                                                                 valueText = (
-                                                                     <span className="text-[10px] text-slate-500 mt-1 font-mono block">
+                                                                     <span className="text-xs md:text-[10px] text-slate-500 mt-1 font-mono block">
                                                                          Best: <span className="text-slate-300 font-bold">{bestBookName} {bestBookPrice.toFixed(2)}</span> <span className={textColor}>({sign}{edge.toFixed(1)}%)</span>
                                                                      </span>
                                                                 );
@@ -413,7 +403,7 @@ export default function Home() {
                                                         }
 
                                                         return (
-                                                            <div key={runner.id} className={`flex flex-col md:flex-row md:items-center px-4 py-3 gap-3 ${selectionBorder}`}>
+                                                            <div key={runner.id} className={`flex flex-col md:flex-row md:items-center px-3 py-3 md:px-4 gap-4 md:gap-3 ${selectionBorder}`}>
                                                                 {/* NAME */}
                                                                 <div className="md:w-1/3 flex flex-col justify-center">
                                                                     <div className="flex items-center gap-2">
@@ -423,7 +413,7 @@ export default function Home() {
                                                                 </div>
 
                                                                 {/* PRICES - STRICT GRID */}
-                                                                <div className="flex flex-1 gap-2 items-center justify-start md:justify-end overflow-hidden">
+                                                                <div className="flex flex-1 gap-2 md:gap-2 items-center justify-between md:justify-end overflow-hidden">
                                                                     {/* EXCHANGE GROUP */}
                                                                     <div className="flex gap-1 flex-none">
                                                                         <PriceBox label="BACK" price={runner.exchange.back} type="back" />
@@ -538,8 +528,8 @@ export default function Home() {
 // --- STRICT & DISCIPLINED COMPONENTS ---
 
 const PriceBox = ({ label, price, type }: any) => (
-    <div className={`w-[52px] h-[44px] rounded flex flex-col items-center justify-center border flex-none ${type === 'back' ? 'bg-[#0f172a] border-blue-500/30' : 'bg-[#1a0f14] border-pink-500/40'}`}>
-        <span className={`text-[9px] font-bold leading-none mb-0.5 uppercase ${type === 'back' ? 'text-blue-500' : 'text-pink-500'}`}>{label}</span>
+    <div className={`w-[52px] h-[48px] md:h-[44px] rounded flex flex-col items-center justify-center border flex-none ${type === 'back' ? 'bg-[#0f172a] border-blue-500/30' : 'bg-[#1a0f14] border-pink-500/40'}`}>
+        <span className={`text-[10px] md:text-[9px] font-bold leading-none mb-0.5 uppercase ${type === 'back' ? 'text-blue-500' : 'text-pink-500'}`}>{label}</span>
         <span className={`text-sm font-bold leading-none ${type === 'back' ? 'text-blue-400' : 'text-pink-400'}`}>{price ? price.toFixed(2) : '—'}</span>
     </div>
 );
@@ -560,8 +550,8 @@ const BookieBox = ({ label, price, color, isBest }: any) => {
     const baseStyle = gradients[color] || gradients.orange;
 
     return (
-        <div className={`w-[52px] h-[44px] rounded flex flex-col items-center justify-center border transition-all flex-none bg-gradient-to-b ${baseStyle} ${activeStyle}`}>
-            <span className="text-[9px] font-bold leading-none mb-0.5 uppercase opacity-90">{label}</span>
+        <div className={`w-[52px] h-[48px] md:h-[44px] rounded flex flex-col items-center justify-center border transition-all flex-none bg-gradient-to-b ${baseStyle} ${activeStyle}`}>
+            <span className="text-[10px] md:text-[9px] font-bold leading-none mb-0.5 uppercase opacity-90">{label}</span>
             <span className={`text-sm font-bold leading-none ${isBest ? 'text-white' : ''}`}>{price && price > 1 ? price.toFixed(2) : '—'}</span>
         </div>
     );
