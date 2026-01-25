@@ -9,7 +9,7 @@ import {
 import SteamersPanel from '@/components/SteamersPanel';
 
 // --- CONFIG ---
-const STEAMER_TEST_MODE = false; // ✅ ACTIVE: Shows ALL markets in Grid for UI testing
+const STEAMER_TEST_MODE = true; // ✅ ACTIVE: Shows ALL markets in Grid for UI testing
 // --------------
 
 const SPORTS = [
