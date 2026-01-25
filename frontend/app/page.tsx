@@ -49,7 +49,6 @@ const groupData = (data: any[]) => {
 
     if (!market) {
         // 🛑 STABLE KEY GENERATION (The Fix for Jumping UI)
-        // We use Name + Time as the React Key. Even if the Market ID flips, this Key stays constant.
         const stableKey = `${row.event_name}_${row.start_time}`;
 
         market = {
@@ -504,7 +503,7 @@ export default function Home() {
                                                     {event.selections?.map((runner: any) => {
                                                         const signal = steamerSignals.get(runner.name);
                                                         
-                                                        // RESTORED VALUE LOGIC (CORRECTED: Bookie vs Lay)
+                                                        // RESTORED & FIXED VALUE LOGIC
                                                         let selectionBorder = "border-transparent";
                                                         let bestBookPrice = 0;
                                                         let bestBookName = "";
@@ -517,31 +516,33 @@ export default function Home() {
                                                                 { name: 'PP', p: runner.bookmakers.paddypower }
                                                             ];
 
-                                                            // Find best bookie
                                                             const best = books.reduce((acc, curr) => (curr.p > 1.0 && curr.p > acc.p) ? curr : acc, { name: '', p: 0 });
                                                             bestBookPrice = best.p;
                                                             bestBookName = best.name;
 
                                                             if (bestBookPrice > 1.0) {
-                                                                // LOGIC: Edge exists ONLY if Bookie > Lay
                                                                 // Formula: ((Bookie / Lay) - 1) * 100
                                                                 const edge = ((bestBookPrice / runner.exchange.lay) - 1) * 100;
                                                                 
-                                                                if (edge > -0.01) { 
-                                                                     const sign = edge > 0 ? '+' : '';
-                                                                     const color = edge > 0.01 ? 'text-emerald-400' : 'text-amber-400';
-                                                                     
-                                                                     valueText = (
-                                                                         <span className="text-[10px] text-slate-500 mt-1 font-mono block">
-                                                                             Best: <span className="text-slate-300 font-bold">{bestBookName} {bestBookPrice.toFixed(2)}</span> <span className={color}>({sign}{edge.toFixed(1)}%)</span>
-                                                                         </span>
-                                                                     );
+                                                                // COLOR LOGIC: Green if > 0, Yellow if > -0.01, else Gray
+                                                                let textColor = 'text-slate-500';
+                                                                if (edge > 0.01) textColor = 'text-emerald-400';
+                                                                else if (edge > -0.01) textColor = 'text-amber-400';
+                                                                
+                                                                const sign = edge > 0 ? '+' : '';
 
-                                                                     if (edge > 0.01) {
-                                                                         selectionBorder = "border-l-4 border-l-emerald-500 bg-emerald-500/5";
-                                                                     } else if (edge >= -0.01) {
-                                                                         selectionBorder = "border-l-4 border-l-amber-500 bg-amber-500/5";
-                                                                     }
+                                                                // ALWAYS SHOW TEXT (Even if negative)
+                                                                valueText = (
+                                                                     <span className="text-[10px] text-slate-500 mt-1 font-mono block">
+                                                                         Best: <span className="text-slate-300 font-bold">{bestBookName} {bestBookPrice.toFixed(2)}</span> <span className={textColor}>({sign}{edge.toFixed(1)}%)</span>
+                                                                     </span>
+                                                                );
+
+                                                                // STRICT BORDER LOGIC (Only highlights on actual opportunities)
+                                                                if (edge > 0.01) {
+                                                                    selectionBorder = "border-l-4 border-l-emerald-500 bg-emerald-500/5";
+                                                                } else if (edge >= -0.01) {
+                                                                    selectionBorder = "border-l-4 border-l-amber-500 bg-amber-500/5";
                                                                 }
                                                             }
                                                         }
