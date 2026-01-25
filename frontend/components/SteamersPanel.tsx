@@ -2,11 +2,11 @@
 import { useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../utils/supabase';
 
-// --- CONFIGURATION ---
-const LOOKBACK_MINUTES = 60;       // Fetch last hour of data
-const MIN_TREND_DURATION_MIN = 1;  // Minimum 1 minute history to declare steam
-const STEAM_THRESHOLD = 0.03;      // 3% drop required (Slightly more sensitive)
-const MIN_VOLUME = 50;             // Lowered from 500 to 50 for testing visibility
+// --- CONFIGURATION (RESTORED DEC 7TH TUNING) ---
+const LOOKBACK_MINUTES = 60;       
+const MIN_TREND_DURATION_MIN = 1;  
+const MOVEMENT_THRESHOLD = 0.02;   // 2% movement triggers a badge (Up or Down)
+const MIN_VOLUME = 50;             // Lower volume gate to catch early moves
 
 interface Snapshot {
   runner_name: string;
@@ -18,7 +18,7 @@ interface Snapshot {
 export default function SteamersPanel({ activeSport, onSteamersChange }: any) {
   const isMounted = useRef(true);
   
-  // Keep previous state to prevent flickering on network blips
+  // Cache to prevent flicker during polling
   const lastKnownEvents = useRef<Set<string>>(new Set());
   const lastKnownSignals = useRef<Map<string, any>>(new Map());
 
@@ -30,7 +30,7 @@ export default function SteamersPanel({ activeSport, onSteamersChange }: any) {
   const fetchMovement = useCallback(async () => {
     if (!activeSport) return;
 
-    // 1. FETCH (Last 60 mins)
+    // 1. FETCH HISTORY
     const timeHorizon = new Date(Date.now() - LOOKBACK_MINUTES * 60 * 1000).toISOString();
     
     const { data, error } = await supabase
@@ -38,59 +38,48 @@ export default function SteamersPanel({ activeSport, onSteamersChange }: any) {
       .select('runner_name, mid_price, volume, ts')
       .eq('sport', activeSport)
       .gt('ts', timeHorizon)
-      .order('ts', { ascending: false }) // Newest first
+      .order('ts', { ascending: false }) 
       .limit(3000);
 
-    // If error, do NOT clear state (prevents flicker). Only return.
-    if (error || !data) {
-      return;
-    }
+    if (error || !data || data.length === 0) return;
 
-    // If genuinely empty data (script not running), we can clear.
-    if (data.length === 0) {
-       if (isMounted.current) onSteamersChange(new Set(), new Map());
-       return;
-    }
-
-    // 2. GROUP
+    // 2. GROUP BY RUNNER
     const groups: Record<string, Snapshot[]> = {};
     const signals = new Map();
     const eventSet = new Set<string>();
-    const now = Date.now();
 
     data.forEach((row: Snapshot) => {
       if (!groups[row.runner_name]) groups[row.runner_name] = [];
       groups[row.runner_name].push(row);
     });
 
-    // 3. ANALYZE (Flexible Velocity Logic)
+    // 3. ANALYZE (BI-DIRECTIONAL: STEAM + DRIFT)
     Object.entries(groups).forEach(([name, history]) => {
-      // History is sorted Newest [0] -> Oldest [N]
       if (history.length < 2) return;
 
-      const current = history[0];
+      const current = history[0]; // Newest
+      const oldest = history[history.length - 1]; // Oldest available in window
       
-      // Filter out total garbage (optional, keeps grid clean)
       if (current.volume < MIN_VOLUME) return;
 
-      // Instead of hunting for a specific 5-15m snapshot, use the OLDEST valid snapshot available.
-      // This ensures we catch steam whether it happened over 2 mins or 40 mins.
-      const oldest = history[history.length - 1];
-      
       const ageMillis = new Date(current.ts).getTime() - new Date(oldest.ts).getTime();
       const ageMinutes = ageMillis / 60000;
 
-      // Must have at least X mins of data to establish a trend
       if (ageMinutes < MIN_TREND_DURATION_MIN) return;
 
-      // Calculate Drop
-      // Start: 2.00 -> End: 1.80 = (2.00 - 1.80) / 2.00 = 0.10 (10% Steam)
-      const delta = (oldest.mid_price - current.mid_price) / oldest.mid_price;
+      // Calculate % Change
+      // Negative Delta = Price Drop = STEAM (Green)
+      // Positive Delta = Price Rise = DRIFT (Red)
+      const delta = (current.mid_price - oldest.mid_price) / oldest.mid_price;
+      const absDelta = Math.abs(delta);
 
-      if (delta >= STEAM_THRESHOLD) {
+      if (absDelta >= MOVEMENT_THRESHOLD) {
+        // DETECT DIRECTION
+        const type = delta < 0 ? 'STEAMER' : 'DRIFT'; 
+        
         signals.set(name, {
-          label: 'STEAMER',
-          pct: delta,
+          label: type,
+          pct: absDelta,
           startPrice: oldest.mid_price,
           endPrice: current.mid_price,
           vol: current.volume,
@@ -100,7 +89,6 @@ export default function SteamersPanel({ activeSport, onSteamersChange }: any) {
       } 
     });
 
-    // Update Refs
     lastKnownEvents.current = eventSet;
     lastKnownSignals.current = signals;
 
@@ -112,7 +100,7 @@ export default function SteamersPanel({ activeSport, onSteamersChange }: any) {
 
   useEffect(() => {
     fetchMovement();
-    const interval = setInterval(fetchMovement, 10000); // 10s polling
+    const interval = setInterval(fetchMovement, 5000); // Fast poll (5s) for "Live" feel
     return () => clearInterval(interval);
   }, [fetchMovement]);
 
