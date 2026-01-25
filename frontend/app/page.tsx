@@ -1,30 +1,17 @@
 'use client';
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState } from 'react';
 import { supabase } from '../utils/supabase';
 import { 
   RefreshCw, TrendingUp, Clock, Radio, Lock, Unlock, 
   Swords, Trophy, Dribbble, AlertCircle, Copy, Check, Search,
-  Zap, Radar 
+  Radar 
 } from 'lucide-react';
-import SteamersPanel from '@/components/SteamersPanel';
-
-// --- CONFIG ---
-const STEAMER_TEST_MODE = true; // ✅ Shows ALL markets in Grid for testing
-// --------------
 
 const SPORTS = [
   { id: 'MMA', label: 'MMA', icon: <Swords size={16} /> },
   { id: 'NFL', label: 'NFL', icon: <Trophy size={16} /> },
   { id: 'Basketball', label: 'Basketball', icon: <Dribbble size={16} /> },
 ];
-
-// HELPER: Equality checks
-const areSetsEqual = (a: Set<string>, b: Set<string>) => 
-  a.size === b.size && [...a].every(x => b.has(x));
-
-const areMapsEqual = (a: Map<string, any>, b: Map<string, any>) =>
-  a.size === b.size &&
-  [...a].every(([k, v]) => JSON.stringify(b.get(k)) === JSON.stringify(v));
 
 // HELPER: Normalize strings
 const normalizeKey = (str: string) => 
@@ -104,10 +91,7 @@ const groupData = (data: any[]) => {
 
 export default function Home() {
   const [activeSport, setActiveSport] = useState('Basketball');
-  const [viewMode, setViewMode] = useState<'scanner' | 'steamers'>('scanner'); 
   const [competitions, setCompetitions] = useState<Record<string, any[]>>({});
-  const [steamerEvents, setSteamerEvents] = useState<Set<string>>(new Set());
-  const [steamerSignals, setSteamerSignals] = useState<Map<string, any>>(new Map());
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState('');
@@ -178,14 +162,6 @@ export default function Home() {
   };
 
   const SCOPE_MODE = process.env.NEXT_PUBLIC_SCOPE_MODE || "";
-
-  const handleSteamersChange = useCallback(
-    (newEvents: Set<string>, newSignals: Map<string, any>) => {
-      setSteamerEvents(prev => areSetsEqual(prev, newEvents) ? prev : newEvents);
-      setSteamerSignals(prev => areMapsEqual(prev, newSignals) ? prev : newSignals);
-    }, 
-    []
-  );
 
   const visibleSports = SCOPE_MODE.startsWith("NBA_PREMATCH_ML") 
     ? SPORTS.filter(s => s.id === 'Basketball' || s.id === 'MMA') 
@@ -286,30 +262,10 @@ export default function Home() {
                 
                 {/* CONTROLS */}
                 <div className="flex items-center gap-3 w-full md:w-auto">
-                     {/* SEGMENTED CONTROL (TOGGLE) */}
-                    <div className="flex bg-[#161F32] p-1 rounded-lg border border-slate-700/50 relative w-full md:w-auto">
-                        <button 
-                            onClick={() => setViewMode('scanner')}
-                            className={`flex-1 md:flex-none px-4 py-1.5 text-xs font-bold rounded-md transition-all flex items-center justify-center gap-1.5 ${
-                                viewMode === 'scanner' 
-                                ? 'bg-blue-600 text-white shadow-md' 
-                                : 'text-slate-500 hover:text-slate-300'
-                            }`}
-                        >
-                            <Radar size={12} className={viewMode === 'scanner' ? 'text-yellow-300' : ''} />
-                            Scanner
-                        </button>
-                        <button 
-                            onClick={() => setViewMode('steamers')}
-                            className={`flex-1 md:flex-none px-4 py-1.5 text-xs font-bold rounded-md transition-all flex items-center justify-center gap-1.5 ${
-                                viewMode === 'steamers' 
-                                ? 'bg-blue-600 text-white shadow-md' 
-                                : 'text-slate-500 hover:text-slate-300'
-                            }`}
-                        >
-                            <Zap size={12} className={viewMode === 'steamers' ? 'text-yellow-300 fill-yellow-300' : ''} />
-                            Steam Grid
-                        </button>
+                    {/* LIVE INDICATOR */}
+                    <div className="bg-[#161F32] px-3 py-1.5 rounded-lg border border-slate-700/50 flex items-center gap-2">
+                        <Radar size={12} className="text-blue-400 animate-pulse" />
+                        <span className="text-xs font-bold text-blue-100 uppercase tracking-wide">Live Scanner</span>
                     </div>
 
                     {/* FREE PASS STATUS */}
@@ -347,11 +303,6 @@ export default function Home() {
 
       <div className="max-w-7xl mx-auto px-4 py-6 space-y-6">
         
-        <SteamersPanel 
-            activeSport={activeSport} 
-            onSteamersChange={handleSteamersChange} 
-        />
-
         {/* SEARCH BAR */}
         <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
@@ -370,10 +321,9 @@ export default function Home() {
             </div>
         )}
 
-        {/* --- MAIN CONTENT SWITCHER --- */}
+        {/* --- MAIN CONTENT (SCANNER ONLY) --- */}
         {(() => { 
             let globalGameIndex = 0; 
-            const allMarkets: any[] = [];
             
             const filterMarkets = (markets: any[]) => markets.filter(m => 
                 m.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
@@ -381,91 +331,7 @@ export default function Home() {
             );
 
             // ============================================
-            // MODE A: STEAMER GRID (Visual, Simple)
-            // ============================================
-            if (viewMode === 'steamers') {
-                Object.values(competitions).forEach(markets => markets.forEach(m => allMarkets.push(m)));
-                
-                // TEST MODE FILTER
-                const steamerMarkets = allMarkets.filter((m: any) => 
-                    STEAMER_TEST_MODE 
-                        ? true 
-                        : m.selections.some((s: any) => steamerEvents.has(s.name))
-                );
-
-                const marketsToShow = filterMarkets(steamerMarkets);
-
-                // If nothing found in "Steam Mode", show message
-                if (marketsToShow.length === 0) {
-                    return (
-                        <div className="flex flex-col items-center justify-center py-20 text-slate-500">
-                            <Zap size={48} className="mb-4 opacity-20" />
-                            <p className="text-lg font-medium">No Steam Detected Yet</p>
-                            <p className="text-xs mt-2 opacity-50">Waiting for market moves...</p>
-                        </div>
-                    );
-                }
-
-                return (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {marketsToShow.map((event: any) => {
-                            const isPaywalled = !isPaid && globalGameIndex >= 3;
-                            globalGameIndex++;
-
-                            const isSuspended = event.market_status === 'SUSPENDED';
-                            const isInPlay = event.in_play;
-                            let borderClass = 'border-slate-800';
-                            if (isSuspended) borderClass = 'border-yellow-500/50';
-                            else if (isInPlay) borderClass = 'border-red-500/50 shadow-[0_0_15px_rgba(239,68,68,0.1)]';
-
-                            return (
-                                // 🛑 STABLE KEY: This stops the jumping 🛑
-                                <div key={event.stable_key} className={`bg-[#161F32] border ${borderClass} rounded-xl overflow-hidden relative group`}>
-                                    <div className="bg-[#0f1522] px-4 py-3 border-b border-slate-800 flex justify-between items-center">
-                                        <h3 className="text-slate-200 font-bold text-sm truncate flex-1 min-w-0 pr-2">{event.name}</h3>
-                                        <div className="flex items-center gap-3 text-[10px] text-slate-500 font-mono">
-                                            {isInPlay && <span className="text-red-500 font-bold tracking-wider flex items-center gap-1"><Radio size={10} className="animate-pulse"/> IN PLAY</span>}
-                                            {!isInPlay && <span className="flex items-center gap-1"><Clock size={10}/> {formatTime(event.start_time)}</span>}
-                                            <span>Vol: £{event.volume?.toLocaleString()}</span>
-                                        </div>
-                                    </div>
-                                    <div className={`p-4 space-y-3 ${isPaywalled ? 'blur-sm select-none opacity-40 pointer-events-none' : ''}`}>
-                                        {event.selections?.map((runner: any) => {
-                                            const signal = steamerSignals.get(runner.name);
-                                            return (
-                                                <div key={runner.name} className="flex justify-between items-center">
-                                                    <div className="flex items-center gap-2">
-                                                        <span className="text-slate-200 font-medium text-sm">{runner.name}</span>
-                                                        {signal && (
-                                                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider ${
-                                                                signal.label === 'STEAMER' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'
-                                                            }`}>{signal.label}</span>
-                                                        )}
-                                                    </div>
-                                                    <div className="flex gap-2">
-                                                        <div className="w-16 h-10 bg-[#0f172a] border border-blue-500/30 rounded flex flex-col items-center justify-center">
-                                                            <span className="text-[7px] text-blue-500 uppercase font-bold leading-none mb-0.5">Back</span>
-                                                            <span className="text-sm font-bold text-blue-400 leading-none">{formatPrice(runner.exchange.back)}</span>
-                                                        </div>
-                                                        <div className="w-16 h-10 bg-[#1a0f14] border border-pink-500/40 rounded flex flex-col items-center justify-center">
-                                                            <span className="text-[7px] text-pink-500 uppercase font-bold leading-none mb-0.5">Lay</span>
-                                                            <span className="text-sm font-bold text-pink-400 leading-none">{formatPrice(runner.exchange.lay)}</span>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
-                                    {isPaywalled && <PaywallOverlay onUnlock={handleUnlock} />}
-                                </div>
-                            );
-                        })}
-                    </div>
-                );
-            }
-
-            // ============================================
-            // MODE B: SCANNER LIST (Detailed, Restored & Polished)
+            // MODE: SCANNER LIST (Detailed)
             // ============================================
             return (
                 <div className="space-y-8">
@@ -490,7 +356,7 @@ export default function Home() {
                                         else if (isInPlay) borderClass = 'border-red-500/50';
 
                                         return (
-                                            // 🛑 STABLE KEY HERE TOO
+                                            // 🛑 STABLE KEY
                                             <div key={event.stable_key} className={`bg-[#161F32] border ${borderClass} rounded-xl overflow-hidden relative`}>
                                                 <div className="bg-[#0f1522] px-4 py-3 border-b border-slate-800 flex justify-between items-center">
                                                     <h3 className="text-slate-200 font-bold text-sm">{event.name}</h3>
@@ -501,7 +367,6 @@ export default function Home() {
                                                 
                                                 <div className={`divide-y divide-slate-800 ${isPaywalled ? 'blur-sm select-none opacity-40 pointer-events-none' : ''}`}>
                                                     {event.selections?.map((runner: any) => {
-                                                        const signal = steamerSignals.get(runner.name);
                                                         
                                                         // RESTORED & FIXED VALUE LOGIC
                                                         let selectionBorder = "border-transparent";
@@ -549,15 +414,10 @@ export default function Home() {
 
                                                         return (
                                                             <div key={runner.id} className={`flex flex-col md:flex-row md:items-center px-4 py-3 gap-3 ${selectionBorder}`}>
-                                                                {/* NAME + SIGNAL */}
+                                                                {/* NAME */}
                                                                 <div className="md:w-1/3 flex flex-col justify-center">
                                                                     <div className="flex items-center gap-2">
                                                                         <span className="text-white font-medium">{runner.name}</span>
-                                                                        {signal && (
-                                                                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${signal.label === 'STEAMER' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'}`}>
-                                                                                {signal.label}
-                                                                            </span>
-                                                                        )}
                                                                     </div>
                                                                     {valueText}
                                                                 </div>
