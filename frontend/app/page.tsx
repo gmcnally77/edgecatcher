@@ -12,6 +12,7 @@ import SteamersPanel from '@/components/SteamersPanel';
 const STEAMER_TEST_MODE = true; // ✅ ACTIVE: Shows ALL markets in Grid for UI testing
 // --------------
 
+
 const SPORTS = [
   { id: 'MMA', label: 'MMA', icon: <Swords size={16} /> },
   { id: 'NFL', label: 'NFL', icon: <Trophy size={16} /> },
@@ -30,30 +31,26 @@ const areMapsEqual = (a: Map<string, any>, b: Map<string, any>) =>
 const normalizeKey = (str: string) => 
   str ? str.toLowerCase().replace(/[^a-z0-9]/g, '') : '';
 
+// ... inside frontend/app/page.tsx
+
 const groupData = (data: any[]) => {
   const competitions: Record<string, any[]> = {};
 
+  // 1. Sort data by freshness (Newest updates first)
+  // This ensures that if we have duplicates, the fresh one is processed first
+  data.sort((a, b) => new Date(b.last_updated).getTime() - new Date(a.last_updated).getTime());
+
   data.forEach(row => {
-    const sportKey = row.sport || '';
-    const isTwoWaySport = ['NFL', 'NBA', 'Basketball', 'MMA', 'American Football', 'UFC']
-        .some(s => sportKey.includes(s));
-
-    const participants = row.event_name 
-        ? row.event_name.split(/\s+v\s+|\s+@\s+|\s+vs\.?\s+/i) 
-        : [];
-
-    if (isTwoWaySport && participants.length === 2) {
-        const p1 = normalizeKey(participants[0]);
-        const p2 = normalizeKey(participants[1]);
-        const runner = normalizeKey(row.runner_name);
-
-        if (runner !== p1 && runner !== p2) return; 
-    }
-
     const compName = row.competition || 'Other';
     if (!competitions[compName]) competitions[compName] = [];
     
-    let market = competitions[compName].find(m => m.id === row.market_id);
+    // 🚨 SMART DEDUP: Check if this event already exists by NAME, not just ID
+    // This catches "Warriors vs Wolves" (Market A) and "Warriors vs Wolves" (Market B)
+    let market = competitions[compName].find(m => 
+        m.id === row.market_id || 
+        (m.name === row.event_name && Math.abs(new Date(m.start_time).getTime() - new Date(row.start_time).getTime()) < 3600000)
+    );
+
     if (!market) {
         market = {
             id: row.market_id,
@@ -62,55 +59,28 @@ const groupData = (data: any[]) => {
             volume: row.volume,
             in_play: row.in_play,
             market_status: row.market_status,
+            last_updated: row.last_updated, // Track freshness
             selections: []
         };
         competitions[compName].push(market);
+    } else {
+        // If we found a match but the IDs are different, it's a duplicate.
+        // Since we sorted by newest first, 'market' is the fresh one. 
+        // We simply ignore this stale 'row' unless it's the SAME market ID adding more runners.
+        if (market.id !== row.market_id) return;
     }
 
+    // Add selection to the market
     market.selections.push({
         id: row.id,
         name: row.runner_name,
-        exchange: {
-            back: row.back_price,
-            lay: row.lay_price
-        },
+        exchange: { back: row.back_price, lay: row.lay_price },
         bookmakers: {
             pinnacle: row.price_pinnacle, 
             ladbrokes: row.price_bet365,
             paddypower: row.price_paddy
         }
     });
-  });
-
-  Object.keys(competitions).forEach(key => {
-      competitions[key].forEach(market => {
-          if (market.selections && market.selections.length > 0) {
-              market.selections.sort((a: any, b: any) => {
-                  const participants = market.name
-                    ? market.name.split(/\s+v\s+|\s+@\s+|\s+vs\.?\s+/i)
-                        .map((p: string) => normalizeKey(p))
-                    : [];
-                  
-                  const keyA = normalizeKey(a.name);
-                  const keyB = normalizeKey(b.name);
-                  const idxA = participants.indexOf(keyA);
-                  const idxB = participants.indexOf(keyB);
-
-                  if (idxA !== -1 && idxB !== -1) return idxA - idxB;
-                  if (idxA !== -1) return -1;
-                  if (idxB !== -1) return 1;
-                  return a.name.localeCompare(b.name);
-              });
-          }
-      });
-      
-      competitions[key].sort((a, b) => {
-          const timeDiff = new Date(a.start_time).getTime() - new Date(b.start_time).getTime();
-          if (timeDiff !== 0) return timeDiff;
-          const nameDiff = a.name.localeCompare(b.name);
-          if (nameDiff !== 0) return nameDiff;
-          return a.id.localeCompare(b.id);
-      });
   });
 
   return competitions;

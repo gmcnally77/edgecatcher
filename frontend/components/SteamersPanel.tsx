@@ -2,11 +2,11 @@
 import { useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../utils/supabase';
 
-// --- CONFIGURATION (RESTORED DEC 7TH TUNING) ---
+// --- TUNING (DECEMBER 7th STYLE) ---
 const LOOKBACK_MINUTES = 60;       
-const MIN_TREND_DURATION_MIN = 1;  
-const MOVEMENT_THRESHOLD = 0.02;   // 2% movement triggers a badge (Up or Down)
-const MIN_VOLUME = 50;             // Lower volume gate to catch early moves
+const MIN_TREND_DURATION_MIN = 0;  // 0 = Show immediate moves (Don't wait 1m)
+const MOVEMENT_THRESHOLD = 0.005;  // 0.5% move triggers badge (Highly sensitive)
+const MIN_VOLUME = 50;             // Keep low to catch early liquidity
 
 interface Snapshot {
   runner_name: string;
@@ -18,7 +18,7 @@ interface Snapshot {
 export default function SteamersPanel({ activeSport, onSteamersChange }: any) {
   const isMounted = useRef(true);
   
-  // Cache to prevent flicker during polling
+  // Refs to hold state silently
   const lastKnownEvents = useRef<Set<string>>(new Set());
   const lastKnownSignals = useRef<Map<string, any>>(new Map());
 
@@ -39,11 +39,11 @@ export default function SteamersPanel({ activeSport, onSteamersChange }: any) {
       .eq('sport', activeSport)
       .gt('ts', timeHorizon)
       .order('ts', { ascending: false }) 
-      .limit(3000);
+      .limit(4000);
 
     if (error || !data || data.length === 0) return;
 
-    // 2. GROUP BY RUNNER
+    // 2. GROUP
     const groups: Record<string, Snapshot[]> = {};
     const signals = new Map();
     const eventSet = new Set<string>();
@@ -53,12 +53,12 @@ export default function SteamersPanel({ activeSport, onSteamersChange }: any) {
       groups[row.runner_name].push(row);
     });
 
-    // 3. ANALYZE (BI-DIRECTIONAL: STEAM + DRIFT)
+    // 3. ANALYZE (Red/Green Logic)
     Object.entries(groups).forEach(([name, history]) => {
       if (history.length < 2) return;
 
-      const current = history[0]; // Newest
-      const oldest = history[history.length - 1]; // Oldest available in window
+      const current = history[0]; 
+      const oldest = history[history.length - 1]; 
       
       if (current.volume < MIN_VOLUME) return;
 
@@ -67,14 +67,13 @@ export default function SteamersPanel({ activeSport, onSteamersChange }: any) {
 
       if (ageMinutes < MIN_TREND_DURATION_MIN) return;
 
-      // Calculate % Change
-      // Negative Delta = Price Drop = STEAM (Green)
-      // Positive Delta = Price Rise = DRIFT (Red)
+      // Calculate % Move
       const delta = (current.mid_price - oldest.mid_price) / oldest.mid_price;
       const absDelta = Math.abs(delta);
 
       if (absDelta >= MOVEMENT_THRESHOLD) {
-        // DETECT DIRECTION
+        // Drop (Negative) = Steam (Green)
+        // Rise (Positive) = Drift (Red)
         const type = delta < 0 ? 'STEAMER' : 'DRIFT'; 
         
         signals.set(name, {
@@ -100,7 +99,7 @@ export default function SteamersPanel({ activeSport, onSteamersChange }: any) {
 
   useEffect(() => {
     fetchMovement();
-    const interval = setInterval(fetchMovement, 5000); // Fast poll (5s) for "Live" feel
+    const interval = setInterval(fetchMovement, 4000); // 4s Poll
     return () => clearInterval(interval);
   }, [fetchMovement]);
 
