@@ -504,15 +504,13 @@ export default function Home() {
                                                     {event.selections?.map((runner: any) => {
                                                         const signal = steamerSignals.get(runner.name);
                                                         
-                                                        // RESTORED VALUE LOGIC
+                                                        // RESTORED VALUE LOGIC (CORRECTED: Bookie vs Lay)
                                                         let selectionBorder = "border-transparent";
                                                         let bestBookPrice = 0;
                                                         let bestBookName = "";
                                                         let valueText = null;
 
-                                                        if (runner.exchange.back > 1.0 && runner.exchange.lay > 1.0) {
-                                                            const mid = (runner.exchange.back + runner.exchange.lay) / 2;
-                                                            
+                                                        if (runner.exchange.lay > 1.0) {
                                                             const books = [
                                                                 { name: 'Pin', p: runner.bookmakers.pinnacle },
                                                                 { name: activeSport === 'MMA' ? 'WH' : 'Lad', p: runner.bookmakers.ladbrokes },
@@ -525,20 +523,26 @@ export default function Home() {
                                                             bestBookName = best.name;
 
                                                             if (bestBookPrice > 1.0) {
-                                                                const diff = ((bestBookPrice / mid) - 1) * 100;
+                                                                // LOGIC: Edge exists ONLY if Bookie > Lay
+                                                                // Formula: ((Bookie / Lay) - 1) * 100
+                                                                const edge = ((bestBookPrice / runner.exchange.lay) - 1) * 100;
                                                                 
-                                                                if (diff > -5.0) { 
-                                                                     const sign = diff > 0 ? '+' : '';
-                                                                     const color = diff > 0 ? 'text-green-400' : 'text-slate-500';
+                                                                if (edge > -0.01) { 
+                                                                     const sign = edge > 0 ? '+' : '';
+                                                                     const color = edge > 0.01 ? 'text-emerald-400' : 'text-amber-400';
+                                                                     
                                                                      valueText = (
                                                                          <span className="text-[10px] text-slate-500 mt-1 font-mono block">
-                                                                             Best: <span className="text-slate-300 font-bold">{bestBookName} {bestBookPrice.toFixed(2)}</span> <span className={color}>({sign}{diff.toFixed(1)}%)</span>
+                                                                             Best: <span className="text-slate-300 font-bold">{bestBookName} {bestBookPrice.toFixed(2)}</span> <span className={color}>({sign}{edge.toFixed(1)}%)</span>
                                                                          </span>
                                                                      );
-                                                                }
 
-                                                                if (diff > 0.01) selectionBorder = "border-l-4 border-l-emerald-500 bg-emerald-500/5";
-                                                                else if (diff >= -0.01) selectionBorder = "border-l-4 border-l-amber-500 bg-amber-500/5";
+                                                                     if (edge > 0.01) {
+                                                                         selectionBorder = "border-l-4 border-l-emerald-500 bg-emerald-500/5";
+                                                                     } else if (edge >= -0.01) {
+                                                                         selectionBorder = "border-l-4 border-l-amber-500 bg-amber-500/5";
+                                                                     }
+                                                                }
                                                             }
                                                         }
 
