@@ -36,16 +36,14 @@ const normalizeKey = (str: string) =>
 const groupData = (data: any[]) => {
   const competitions: Record<string, any[]> = {};
 
-  // 1. Sort data by freshness (Newest updates first)
-  // This ensures that if we have duplicates, the fresh one is processed first
+  // 1. FRESHNESS SORT: Prioritize newest data to kill zombies
   data.sort((a, b) => new Date(b.last_updated).getTime() - new Date(a.last_updated).getTime());
 
   data.forEach(row => {
     const compName = row.competition || 'Other';
     if (!competitions[compName]) competitions[compName] = [];
     
-    // 🚨 SMART DEDUP: Check if this event already exists by NAME, not just ID
-    // This catches "Warriors vs Wolves" (Market A) and "Warriors vs Wolves" (Market B)
+    // 2. DEDUP: Find existing by ID or Fuzzy Name Match
     let market = competitions[compName].find(m => 
         m.id === row.market_id || 
         (m.name === row.event_name && Math.abs(new Date(m.start_time).getTime() - new Date(row.start_time).getTime()) < 3600000)
@@ -59,18 +57,13 @@ const groupData = (data: any[]) => {
             volume: row.volume,
             in_play: row.in_play,
             market_status: row.market_status,
-            last_updated: row.last_updated, // Track freshness
             selections: []
         };
         competitions[compName].push(market);
     } else {
-        // If we found a match but the IDs are different, it's a duplicate.
-        // Since we sorted by newest first, 'market' is the fresh one. 
-        // We simply ignore this stale 'row' unless it's the SAME market ID adding more runners.
-        if (market.id !== row.market_id) return;
+        if (market.id !== row.market_id) return; // Ignore duplicate/zombie row
     }
 
-    // Add selection to the market
     market.selections.push({
         id: row.id,
         name: row.runner_name,
@@ -81,6 +74,27 @@ const groupData = (data: any[]) => {
             paddypower: row.price_paddy
         }
     });
+  });
+
+  // 3. STABLE SORT (The Fix): Force strict order by Time -> Name
+  Object.keys(competitions).forEach(key => {
+      competitions[key].sort((a, b) => {
+          // Rule 1: Live games first
+          if (a.in_play && !b.in_play) return -1;
+          if (!a.in_play && b.in_play) return 1;
+
+          // Rule 2: Start Time (Soonest first)
+          const timeDiff = new Date(a.start_time).getTime() - new Date(b.start_time).getTime();
+          if (timeDiff !== 0) return timeDiff;
+
+          // Rule 3: Alphabetical (Tie-breaker)
+          return a.name.localeCompare(b.name);
+      });
+      
+      // Also sort selections (Runners) A-Z to prevent internal jumping
+      competitions[key].forEach(market => {
+          market.selections.sort((a: any, b: any) => a.name.localeCompare(b.name));
+      });
   });
 
   return competitions;
