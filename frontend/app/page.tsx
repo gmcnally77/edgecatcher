@@ -9,9 +9,8 @@ import {
 import SteamersPanel from '@/components/SteamersPanel';
 
 // --- CONFIG ---
-const STEAMER_TEST_MODE = true; // ✅ ACTIVE: Shows ALL markets in Grid for UI testing
+const STEAMER_TEST_MODE = true; // ✅ Shows ALL markets in Grid for testing
 // --------------
-
 
 const SPORTS = [
   { id: 'MMA', label: 'MMA', icon: <Swords size={16} /> },
@@ -31,12 +30,11 @@ const areMapsEqual = (a: Map<string, any>, b: Map<string, any>) =>
 const normalizeKey = (str: string) => 
   str ? str.toLowerCase().replace(/[^a-z0-9]/g, '') : '';
 
-// ... inside frontend/app/page.tsx
-
+// 🚨 DATA GROUPING ENGINE (With Stable Keys)
 const groupData = (data: any[]) => {
   const competitions: Record<string, any[]> = {};
 
-  // 1. FRESHNESS SORT: Prioritize newest data to kill zombies
+  // 1. FRESHNESS SORT: Process newest updates first to kill zombies
   data.sort((a, b) => new Date(b.last_updated).getTime() - new Date(a.last_updated).getTime());
 
   data.forEach(row => {
@@ -50,8 +48,13 @@ const groupData = (data: any[]) => {
     );
 
     if (!market) {
+        // 🛑 STABLE KEY GENERATION (The Fix for Jumping UI)
+        // We use Name + Time as the React Key. Even if the Market ID flips, this Key stays constant.
+        const stableKey = `${row.event_name}_${row.start_time}`;
+
         market = {
             id: row.market_id,
+            stable_key: stableKey, // <--- Used for React Keys
             name: row.event_name,
             start_time: row.start_time,
             volume: row.volume,
@@ -76,7 +79,7 @@ const groupData = (data: any[]) => {
     });
   });
 
-  // 3. STABLE SORT (The Fix): Force strict order by Time -> Name
+  // 3. STABLE SORT: Force strict order by Time -> Name
   Object.keys(competitions).forEach(key => {
       competitions[key].sort((a, b) => {
           // Rule 1: Live games first
@@ -91,7 +94,7 @@ const groupData = (data: any[]) => {
           return a.name.localeCompare(b.name);
       });
       
-      // Also sort selections (Runners) A-Z to prevent internal jumping
+      // Sort Selections A-Z
       competitions[key].forEach(market => {
           market.selections.sort((a: any, b: any) => a.name.localeCompare(b.name));
       });
@@ -176,7 +179,6 @@ export default function Home() {
   };
 
   const SCOPE_MODE = process.env.NEXT_PUBLIC_SCOPE_MODE || "";
-  const STEAMERS_ONLY_ENABLED = (process.env.NEXT_PUBLIC_STEAMERS_ONLY || "0") === "1";
 
   const handleSteamersChange = useCallback(
     (newEvents: Set<string>, newSignals: Map<string, any>) => {
@@ -209,6 +211,7 @@ export default function Home() {
 
     if (!error && data) {
       const now = new Date();
+      // Relaxed heartbeat to prevent blank screen if data is slightly old
       const heartbeatCutoff = new Date(now.getTime() - 24 * 60 * 60 * 1000);
 
       const activeRows = data.filter((row: any) => {
@@ -384,12 +387,10 @@ export default function Home() {
             if (viewMode === 'steamers') {
                 Object.values(competitions).forEach(markets => markets.forEach(m => allMarkets.push(m)));
                 
-                // ✅ FILTER LOGIC FIXED:
-                // If Test Mode -> Show ALL filtered markets (ignore steam requirement)
-                // If Real Mode -> Only show markets with Active Steam
+                // TEST MODE FILTER
                 const steamerMarkets = allMarkets.filter((m: any) => 
                     STEAMER_TEST_MODE 
-                        ? true // 🚨 SHOW EVERYTHING (Nuclear Bypass)
+                        ? true 
                         : m.selections.some((s: any) => steamerEvents.has(s.name))
                 );
 
@@ -419,7 +420,8 @@ export default function Home() {
                             else if (isInPlay) borderClass = 'border-red-500/50 shadow-[0_0_15px_rgba(239,68,68,0.1)]';
 
                             return (
-                                <div key={event.id} className={`bg-[#161F32] border ${borderClass} rounded-xl overflow-hidden relative group`}>
+                                // 🛑 STABLE KEY: This stops the jumping 🛑
+                                <div key={event.stable_key} className={`bg-[#161F32] border ${borderClass} rounded-xl overflow-hidden relative group`}>
                                     <div className="bg-[#0f1522] px-4 py-3 border-b border-slate-800 flex justify-between items-center">
                                         <h3 className="text-slate-200 font-bold text-sm truncate flex-1 min-w-0 pr-2">{event.name}</h3>
                                         <div className="flex items-center gap-3 text-[10px] text-slate-500 font-mono">
@@ -432,7 +434,7 @@ export default function Home() {
                                         {event.selections?.map((runner: any) => {
                                             const signal = steamerSignals.get(runner.name);
                                             return (
-                                                <div key={runner.id} className="flex justify-between items-center">
+                                                <div key={runner.name} className="flex justify-between items-center">
                                                     <div className="flex items-center gap-2">
                                                         <span className="text-slate-200 font-medium text-sm">{runner.name}</span>
                                                         {signal && (
@@ -489,7 +491,8 @@ export default function Home() {
                                         else if (isInPlay) borderClass = 'border-red-500/50';
 
                                         return (
-                                            <div key={event.id} className={`bg-[#161F32] border ${borderClass} rounded-xl overflow-hidden relative`}>
+                                            // 🛑 STABLE KEY HERE TOO
+                                            <div key={event.stable_key} className={`bg-[#161F32] border ${borderClass} rounded-xl overflow-hidden relative`}>
                                                 <div className="bg-[#0f1522] px-4 py-3 border-b border-slate-800 flex justify-between items-center">
                                                     <h3 className="text-slate-200 font-bold text-sm">{event.name}</h3>
                                                     <div className="flex gap-2 text-xs text-slate-500">
@@ -524,7 +527,6 @@ export default function Home() {
                                                             if (bestBookPrice > 1.0) {
                                                                 const diff = ((bestBookPrice / mid) - 1) * 100;
                                                                 
-                                                                // Restore Value Text & Styling
                                                                 if (diff > -5.0) { 
                                                                      const sign = diff > 0 ? '+' : '';
                                                                      const color = diff > 0 ? 'text-green-400' : 'text-slate-500';
@@ -552,7 +554,6 @@ export default function Home() {
                                                                             </span>
                                                                         )}
                                                                     </div>
-                                                                    {/* RESTORED VALUE TEXT */}
                                                                     {valueText}
                                                                 </div>
 
