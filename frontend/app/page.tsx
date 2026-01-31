@@ -509,7 +509,7 @@ export default function Home() {
             rel="noreferrer" 
             className="flex items-center justify-center w-full bg-[#229ED9] hover:bg-[#1e8ebc] text-white font-bold py-3 rounded-lg shadow-md transition-all text-xs"
           >
-            Message @NBA_steamers to Unlock
+            Message @Exchange_Steamers_Bot to Unlock
           </a>
         </div>
       </div>
