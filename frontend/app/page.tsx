@@ -472,63 +472,65 @@ export default function Home() {
 
       {/* PAYMENT MODAL (UNCHANGED) */}
       {showPaymentModal && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-            <div className="bg-[#161F32] border border-blue-500/30 rounded-xl p-6 max-w-sm w-full shadow-2xl space-y-5 relative">
-                <div className="text-center space-y-1">
-                    <h3 className="text-white font-bold text-lg leading-tight">Unlock Full Catcher</h3>
-                    <p className="text-blue-400 font-mono font-bold text-lg">£25 / month</p>
-                </div>
-                <button 
-                    onClick={handleActivateTrial}
-                    className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 rounded-lg shadow-lg border border-emerald-400/50 flex flex-col items-center justify-center gap-0.5 transition-all group"
-                >
-                    <span className="text-sm group-hover:scale-105 transition-transform">Money Back Guarantee</span>
-                    <span className="text-[10px] opacity-90 font-medium text-emerald-100">Make Money Month One or Full Refund</span>
-                </button>
-                <div className="flex items-center justify-center gap-2 py-1 opacity-60">
-                    <div className="h-px bg-slate-700 w-8"></div>
-                    <div className="h-px bg-slate-700 w-8"></div>
-                </div>
-                <div className="bg-[#0B1120] p-4 rounded-lg text-sm text-slate-300 space-y-3 border border-slate-800 opacity-80 hover:opacity-100 transition-opacity">
-                    <div className="leading-relaxed">
-                        <span className="font-bold text-white block mb-1">1) Pay £25 on Stripe:</span>
-                        <div className="mb-3 bg-black/30 border border-slate-700/50 rounded px-2 py-1 inline-block">
-                            <span className="text-xs text-slate-400 mr-2">Payment Ref:</span>
-                            <span className="font-mono font-bold text-white select-all">{paymentRef}</span>
-                        </div>
-                        
-                        {/* EXPOSED STRIPE BUTTON */}
-                        <a 
-                            href="https://buy.stripe.com/7sY9ASeya3bT7i30sr6sw01" 
-                            target="_blank" 
-                            rel="noopener noreferrer" 
-                            className="flex items-center justify-center w-full bg-[#635BFF] hover:bg-[#5851e5] text-white font-bold py-3 rounded-lg shadow-md transition-all text-sm mb-2"
-                        >
-                            Pay Securely with Stripe
-                        </a>
+  <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+    <div className="bg-[#161F32] border border-blue-500/30 rounded-xl p-6 max-w-sm w-full shadow-2xl space-y-5 relative">
+      <div className="text-center space-y-1">
+        <h3 className="text-white font-bold text-lg leading-tight">Unlock Full Catcher</h3>
+        <p className="text-blue-400 font-mono font-bold text-lg">£25 / month</p>
+      </div>
+      
+      <div className="w-full bg-emerald-600/20 text-emerald-400 font-bold py-3 rounded-lg border border-emerald-500/30 flex flex-col items-center justify-center gap-0.5">
+        <span className="text-xs uppercase tracking-wider">Money Back Guarantee</span>
+        <span className="text-[10px] opacity-90 font-medium">Make Money Month One or Full Refund</span>
+      </div>
 
-                        <div className="flex items-center justify-center">
-                            <button onClick={handleCopyLink} className="text-slate-500 hover:text-slate-300 text-[10px] font-bold flex items-center gap-1 transition-all">
-                                {copied ? <Check size={10} /> : <Copy size={10} />}
-                                {copied ? "Revolut Link Copied" : "Pay via Revolut instead"}
-                            </button>
-                        </div>
-                    </div>
-    
-                    <div className="leading-relaxed pt-2">
-                        <span className="font-bold text-white block">2) Then DM @NBA_steamers</span>
-                        <a href="https://t.me/NBA_steamers" target="_blank" rel="noreferrer" className="mt-3 flex items-center justify-center w-full bg-[#229ED9] hover:bg-[#1e8ebc] text-white font-bold py-3 rounded-lg shadow-md transition-all text-xs">
-                            DM on Telegram
-                        </a>
-                    </div>
-                </div>
-                <div className="flex flex-col gap-3 pt-2">
-                    <button onClick={handleConfirmPayment} className="bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-lg w-full transition-all shadow-lg border border-blue-500/50">I’VE PAID — UNLOCK</button>
-                    <button onClick={() => setShowPaymentModal(false)} className="text-slate-500 hover:text-white font-medium text-xs py-2 uppercase tracking-wide transition-colors">Not now</button>
-                </div>
-            </div>
+      <div className="bg-[#0B1120] p-4 rounded-lg text-sm text-slate-300 space-y-4 border border-slate-800">
+        <div className="leading-relaxed">
+          <span className="font-bold text-white block mb-2 text-xs uppercase tracking-tight">Step 1: Secure Payment</span>
+          <a 
+            href="https://buy.stripe.com/7sY9ASeya3bT7i30sr6sw01" 
+            target="_blank" 
+            rel="noopener noreferrer" 
+            className="flex items-center justify-center w-full bg-[#635BFF] hover:bg-[#5851e5] text-white font-bold py-4 rounded-lg shadow-lg transition-all text-sm group"
+          >
+            Pay with Stripe
+          </a>
+          <div className="mt-3 flex items-center justify-between bg-black/30 border border-slate-700/50 rounded px-3 py-2">
+            <span className="text-[10px] text-slate-500 font-bold uppercase">Payment Ref:</span>
+            <span className="font-mono font-bold text-white">{paymentRef}</span>
+          </div>
         </div>
-      )}
+
+        <div className="leading-relaxed border-t border-slate-800 pt-4">
+          <span className="font-bold text-white block mb-2 text-xs uppercase tracking-tight">Step 2: Instant Activation</span>
+          <a 
+            href="https://t.me/NBA_steamers" 
+            target="_blank" 
+            rel="noreferrer" 
+            className="flex items-center justify-center w-full bg-[#229ED9] hover:bg-[#1e8ebc] text-white font-bold py-3 rounded-lg shadow-md transition-all text-xs"
+          >
+            Message @NBA_steamers to Unlock
+          </a>
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-3 pt-2">
+        <button 
+          onClick={handleConfirmPayment} 
+          className="bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold py-3 rounded-lg w-full transition-all text-xs border border-slate-700"
+        >
+          I’VE PAID — REFRESH ACCESS
+        </button>
+        <button 
+          onClick={() => setShowPaymentModal(false)} 
+          className="text-slate-500 hover:text-white font-medium text-[10px] py-2 uppercase tracking-widest transition-colors mx-auto"
+        >
+          Not now
+        </button>
+      </div>
+    </div>
+  </div>
+)}
     </div>
   );
 }
