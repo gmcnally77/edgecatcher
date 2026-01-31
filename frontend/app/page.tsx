@@ -492,23 +492,32 @@ export default function Home() {
                 <div className="bg-[#0B1120] p-4 rounded-lg text-sm text-slate-300 space-y-3 border border-slate-800 opacity-80 hover:opacity-100 transition-opacity">
                     <div className="leading-relaxed">
                         <span className="font-bold text-white block mb-1">1) Pay £25 on Stripe:</span>
-                        <div className="mb-2 bg-black/30 border border-slate-700/50 rounded px-2 py-1 inline-block">
+                        <div className="mb-3 bg-black/30 border border-slate-700/50 rounded px-2 py-1 inline-block">
                             <span className="text-xs text-slate-400 mr-2">Payment Ref:</span>
                             <span className="font-mono font-bold text-white select-all">{paymentRef}</span>
                         </div>
-                        <div className="flex items-center gap-2 flex-wrap">
-                            <a href="https://buy.stripe.com/7sY9ASeya3bT7i30sr6sw01" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300 hover:underline break-all font-mono">
-                                
-                            </a>
-                            <button onClick={handleCopyLink} className="bg-slate-700 hover:bg-slate-600 text-white text-[10px] font-bold px-2 py-1 rounded flex items-center gap-1 transition-all min-w-[60px] justify-center">
+                        
+                        {/* EXPOSED STRIPE BUTTON */}
+                        <a 
+                            href="https://buy.stripe.com/7sY9ASeya3bT7i30sr6sw01" 
+                            target="_blank" 
+                            rel="noopener noreferrer" 
+                            className="flex items-center justify-center w-full bg-[#635BFF] hover:bg-[#5851e5] text-white font-bold py-3 rounded-lg shadow-md transition-all text-sm mb-2"
+                        >
+                            Pay Securely with Stripe
+                        </a>
+
+                        <div className="flex items-center justify-center">
+                            <button onClick={handleCopyLink} className="text-slate-500 hover:text-slate-300 text-[10px] font-bold flex items-center gap-1 transition-all">
                                 {copied ? <Check size={10} /> : <Copy size={10} />}
-                                {copied ? "Copied" : "Copy"}
+                                {copied ? "Revolut Link Copied" : "Pay via Revolut instead"}
                             </button>
                         </div>
                     </div>
-                    <div className="leading-relaxed">
+    
+                    <div className="leading-relaxed pt-2">
                         <span className="font-bold text-white block">2) Then DM @NBA_steamers</span>
-                        <a href="https://t.me/NBA_steamers" target="_blank" rel="noreferrer" className="mt-3 flex items-center justify-center w-full bg-[#229ED9] hover:bg-[#1f8rbc] text-white font-bold py-3 rounded-lg shadow-md transition-all text-xs">
+                        <a href="https://t.me/NBA_steamers" target="_blank" rel="noreferrer" className="mt-3 flex items-center justify-center w-full bg-[#229ED9] hover:bg-[#1e8ebc] text-white font-bold py-3 rounded-lg shadow-md transition-all text-xs">
                             DM on Telegram
                         </a>
                     </div>
