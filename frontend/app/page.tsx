@@ -504,7 +504,7 @@ export default function Home() {
         <div className="leading-relaxed border-t border-slate-800 pt-4">
           <span className="font-bold text-white block mb-2 text-xs uppercase tracking-tight">Step 2: Instant Activation</span>
           <a 
-            href="https://t.me/NBA_steamers" 
+            href="https://t.me/exchange_steamers_bot" 
             target="_blank" 
             rel="noreferrer" 
             className="flex items-center justify-center w-full bg-[#229ED9] hover:bg-[#1e8ebc] text-white font-bold py-3 rounded-lg shadow-md transition-all text-xs"
