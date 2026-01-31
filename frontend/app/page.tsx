@@ -475,31 +475,30 @@ export default function Home() {
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
             <div className="bg-[#161F32] border border-blue-500/30 rounded-xl p-6 max-w-sm w-full shadow-2xl space-y-5 relative">
                 <div className="text-center space-y-1">
-                    <h3 className="text-white font-bold text-lg leading-tight">Unlock Full Scanner</h3>
-                    <p className="text-blue-400 font-mono font-bold text-lg">£5 / week</p>
+                    <h3 className="text-white font-bold text-lg leading-tight">Unlock Full Catcher</h3>
+                    <p className="text-blue-400 font-mono font-bold text-lg">£25 / month</p>
                 </div>
                 <button 
                     onClick={handleActivateTrial}
                     className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 rounded-lg shadow-lg border border-emerald-400/50 flex flex-col items-center justify-center gap-0.5 transition-all group"
                 >
-                    <span className="text-sm group-hover:scale-105 transition-transform">ACTIVATE 24H FREE PASS</span>
-                    <span className="text-[10px] opacity-90 font-medium text-emerald-100">No payment needed. Instant access.</span>
+                    <span className="text-sm group-hover:scale-105 transition-transform">Money Back Guarantee</span>
+                    <span className="text-[10px] opacity-90 font-medium text-emerald-100">Make Money Month One or Full Refund</span>
                 </button>
                 <div className="flex items-center justify-center gap-2 py-1 opacity-60">
                     <div className="h-px bg-slate-700 w-8"></div>
-                    <span className="text-[9px] uppercase text-slate-500 font-bold">OR PAY FOR LIFETIME</span>
                     <div className="h-px bg-slate-700 w-8"></div>
                 </div>
                 <div className="bg-[#0B1120] p-4 rounded-lg text-sm text-slate-300 space-y-3 border border-slate-800 opacity-80 hover:opacity-100 transition-opacity">
                     <div className="leading-relaxed">
-                        <span className="font-bold text-white block mb-1">1) Pay £5 on Revolut:</span>
+                        <span className="font-bold text-white block mb-1">1) Pay £25 on Stripe:</span>
                         <div className="mb-2 bg-black/30 border border-slate-700/50 rounded px-2 py-1 inline-block">
                             <span className="text-xs text-slate-400 mr-2">Payment Ref:</span>
                             <span className="font-mono font-bold text-white select-all">{paymentRef}</span>
                         </div>
                         <div className="flex items-center gap-2 flex-wrap">
-                            <a href="https://revolut.me/gerardq0w5" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300 hover:underline break-all font-mono">
-                                revolut.me/gerardq0w5
+                            <a href="https://buy.stripe.com/7sY9ASeya3bT7i30sr6sw01" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300 hover:underline break-all font-mono">
+                                
                             </a>
                             <button onClick={handleCopyLink} className="bg-slate-700 hover:bg-slate-600 text-white text-[10px] font-bold px-2 py-1 rounded flex items-center gap-1 transition-all min-w-[60px] justify-center">
                                 {copied ? <Check size={10} /> : <Copy size={10} />}
