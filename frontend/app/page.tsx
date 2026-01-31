@@ -481,7 +481,7 @@ export default function Home() {
       
       <div className="w-full bg-emerald-600/20 text-emerald-400 font-bold py-3 rounded-lg border border-emerald-500/30 flex flex-col items-center justify-center gap-0.5">
         <span className="text-xs uppercase tracking-wider">Money Back Guarantee</span>
-        <span className="text-[10px] opacity-90 font-medium">Make Money Month One or Full Refund</span>
+        <span className="text-[10px] opacity-90 font-medium">Make Money Month One or Your Money Back</span>
       </div>
 
       <div className="bg-[#0B1120] p-4 rounded-lg text-sm text-slate-300 space-y-4 border border-slate-800">
