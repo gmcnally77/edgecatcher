@@ -213,7 +213,7 @@ export default function Home() {
     setCompetitions({});
     setLoading(true);
     fetchPrices();
-    const interval = setInterval(fetchPrices, 1000); 
+    const interval = setInterval(fetchPrices, 1000);
     return () => clearInterval(interval);
   }, [activeSport]);
 
@@ -244,7 +244,7 @@ export default function Home() {
                     </div>
                     <div className="flex flex-col">
                         <span className="block text-xl font-bold text-white tracking-tight leading-none">
-                            EdgeScanner
+                            EdgeCatcher
                         </span>
                         <div className="flex items-center gap-2 mt-0.5">
                             {/* GOLD PRO BADGE */}
@@ -265,7 +265,7 @@ export default function Home() {
                     {/* LIVE INDICATOR */}
                     <div className="bg-[#161F32] px-3 py-1.5 rounded-lg border border-slate-700/50 flex items-center gap-2">
                         <Radar size={12} className="text-blue-400 animate-pulse" />
-                        <span className="text-xs font-bold text-blue-100 uppercase tracking-wide">Live Scanner</span>
+                        <span className="text-xs font-bold text-blue-100 uppercase tracking-wide">Live Price Cather</span>
                     </div>
 
                     {/* FREE PASS STATUS */}
