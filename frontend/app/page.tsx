@@ -173,49 +173,90 @@ export default function Home() {
     }
   }, []);
 
-  const fetchPrices = async () => {
-    const dbCutoff = new Date();
-    dbCutoff.setHours(dbCutoff.getHours() - 24); 
-
-    let { data, error } = await supabase
-      .from('market_feed')
-      .select('*')
-      .eq('sport', activeSport)
-      .gt('start_time', dbCutoff.toISOString())
-      .order('start_time', { ascending: true });
-
-    if (!error && data) {
-      const now = new Date();
-      // Relaxed heartbeat to prevent blank screen if data is slightly old
-      const heartbeatCutoff = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-
-      const activeRows = data.filter((row: any) => {
-        if (row.last_updated && new Date(row.last_updated) < heartbeatCutoff) return false;
-        if (row.market_status === 'CLOSED' || row.market_status === 'SETTLED') return false;
-        if (SCOPE_MODE.startsWith('NBA_PREMATCH_ML') && (row.in_play || new Date(row.start_time) <= now)) return false;
-        return true; 
-      });
-
-      try {
-          const grouped = groupData(activeRows);
-          setCompetitions(grouped);
-          const latestTs = activeRows.reduce((max: number, r: any) => {
-              const ts = r.last_updated ? new Date(r.last_updated).getTime() : 0;
-              return ts > max ? ts : max;
-          }, 0);
-          if (latestTs > 0) setLastUpdated(new Date(latestTs).toLocaleTimeString());
-      } catch (e) { console.error(e); }
-    }
-    setLoading(false);
-  };
-
+  // --- REPLACED FETCHING LOGIC (Robust & Debuggable) ---
   useEffect(() => {
+    let isMounted = true; // Prevents "zombie" updates
+
+    const runFetch = async () => {
+      // 1. Setup time window (24h back)
+      const dbCutoff = new Date();
+      dbCutoff.setHours(dbCutoff.getHours() - 24); 
+
+      // console.log(`🚀 Fetching for ${activeSport}...`);
+
+      // 2. Fetch from Supabase
+      let { data, error } = await supabase
+        .from('market_feed')
+        .select('*')
+        .eq('sport', activeSport)
+        .gt('start_time', dbCutoff.toISOString())
+        .order('start_time', { ascending: true });
+
+      // 3. Safety Check: Did the user switch tabs while we were waiting?
+      if (!isMounted) return; 
+
+      if (error) {
+          console.error("Supabase Error:", error);
+          return;
+      }
+
+      if (data) {
+        // DIAGNOSTIC LOGS: Use these in Console to debug empty screens
+        console.log(`✅ RAW DATA for ${activeSport}:`, data.length, "rows"); 
+        
+        const now = new Date();
+        const heartbeatCutoff = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+
+        // 4. Filter Logic
+        const activeRows = data.filter((row: any) => {
+            // Drop stale data (older than 24h)
+            if (row.last_updated && new Date(row.last_updated) < heartbeatCutoff) return false;
+            
+            // Drop Closed/Settled markets
+            if (row.market_status === 'CLOSED' || row.market_status === 'SETTLED') return false;
+
+            // Strict NBA Mode Checks
+            if (SCOPE_MODE.startsWith('NBA_PREMATCH_ML')) {
+                // If the exchange says it's In-Play, hide it
+                if (row.in_play) return false;
+
+                // If start time was 6+ hours ago, hide it (likely finished)
+                const sixHoursAgo = Date.now() - (6 * 60 * 60 * 1000);
+                if (new Date(row.start_time).getTime() < sixHoursAgo) return false;
+            }
+            return true; 
+        });
+
+        console.log(`🛡️ FILTERED DATA for ${activeSport}:`, activeRows.length, "rows");
+
+        try {
+            const grouped = groupData(activeRows);
+            setCompetitions(grouped);
+            
+            // Update "Last Updated" timestamp
+            const latestTs = activeRows.reduce((max: number, r: any) => {
+                const ts = r.last_updated ? new Date(r.last_updated).getTime() : 0;
+                return ts > max ? ts : max;
+            }, 0);
+            if (latestTs > 0) setLastUpdated(new Date(latestTs).toLocaleTimeString());
+        } catch (e) { console.error(e); }
+      }
+      setLoading(false);
+    };
+
+    // Reset state immediately when sport changes
     setCompetitions({});
     setLoading(true);
-    fetchPrices();
-    const interval = setInterval(fetchPrices, 1000); 
-    return () => clearInterval(interval);
+    
+    runFetch(); 
+    const interval = setInterval(runFetch, 2000); // Fetch every 2s
+
+    return () => {
+        isMounted = false; // Cleanup flag
+        clearInterval(interval);
+    };
   }, [activeSport]);
+  // -----------------------------------------------------
 
   const formatTime = (isoString: string) => {
     if (!isoString) return '';
@@ -244,7 +285,7 @@ export default function Home() {
                     </div>
                     <div className="flex flex-col">
                         <span className="block text-xl font-bold text-white tracking-tight leading-none">
-                            EdgeScanner
+                            EdgeCatcher
                         </span>
                         <div className="flex items-center gap-2 mt-0.5">
                             {/* GOLD PRO BADGE */}
@@ -265,7 +306,7 @@ export default function Home() {
                     {/* LIVE INDICATOR */}
                     <div className="bg-[#161F32] px-3 py-1.5 rounded-lg border border-slate-700/50 flex items-center gap-2">
                         <Radar size={12} className="text-blue-400 animate-pulse" />
-                        <span className="text-xs font-bold text-blue-100 uppercase tracking-wide">Live Scanner</span>
+                        <span className="text-xs font-bold text-blue-100 uppercase tracking-wide">Live Price Cather</span>
                     </div>
 
                     {/* FREE PASS STATUS */}
@@ -472,55 +513,65 @@ export default function Home() {
 
       {/* PAYMENT MODAL (UNCHANGED) */}
       {showPaymentModal && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-            <div className="bg-[#161F32] border border-blue-500/30 rounded-xl p-6 max-w-sm w-full shadow-2xl space-y-5 relative">
-                <div className="text-center space-y-1">
-                    <h3 className="text-white font-bold text-lg leading-tight">Unlock Full Scanner</h3>
-                    <p className="text-blue-400 font-mono font-bold text-lg">£5 / week</p>
-                </div>
-                <button 
-                    onClick={handleActivateTrial}
-                    className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 rounded-lg shadow-lg border border-emerald-400/50 flex flex-col items-center justify-center gap-0.5 transition-all group"
-                >
-                    <span className="text-sm group-hover:scale-105 transition-transform">ACTIVATE 24H FREE PASS</span>
-                    <span className="text-[10px] opacity-90 font-medium text-emerald-100">No payment needed. Instant access.</span>
-                </button>
-                <div className="flex items-center justify-center gap-2 py-1 opacity-60">
-                    <div className="h-px bg-slate-700 w-8"></div>
-                    <span className="text-[9px] uppercase text-slate-500 font-bold">OR PAY FOR LIFETIME</span>
-                    <div className="h-px bg-slate-700 w-8"></div>
-                </div>
-                <div className="bg-[#0B1120] p-4 rounded-lg text-sm text-slate-300 space-y-3 border border-slate-800 opacity-80 hover:opacity-100 transition-opacity">
-                    <div className="leading-relaxed">
-                        <span className="font-bold text-white block mb-1">1) Pay £5 on Revolut:</span>
-                        <div className="mb-2 bg-black/30 border border-slate-700/50 rounded px-2 py-1 inline-block">
-                            <span className="text-xs text-slate-400 mr-2">Payment Ref:</span>
-                            <span className="font-mono font-bold text-white select-all">{paymentRef}</span>
-                        </div>
-                        <div className="flex items-center gap-2 flex-wrap">
-                            <a href="https://revolut.me/gerardq0w5" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300 hover:underline break-all font-mono">
-                                revolut.me/gerardq0w5
-                            </a>
-                            <button onClick={handleCopyLink} className="bg-slate-700 hover:bg-slate-600 text-white text-[10px] font-bold px-2 py-1 rounded flex items-center gap-1 transition-all min-w-[60px] justify-center">
-                                {copied ? <Check size={10} /> : <Copy size={10} />}
-                                {copied ? "Copied" : "Copy"}
-                            </button>
-                        </div>
-                    </div>
-                    <div className="leading-relaxed">
-                        <span className="font-bold text-white block">2) Then DM @NBA_steamers</span>
-                        <a href="https://t.me/NBA_steamers" target="_blank" rel="noreferrer" className="mt-3 flex items-center justify-center w-full bg-[#229ED9] hover:bg-[#1f8rbc] text-white font-bold py-3 rounded-lg shadow-md transition-all text-xs">
-                            DM on Telegram
-                        </a>
-                    </div>
-                </div>
-                <div className="flex flex-col gap-3 pt-2">
-                    <button onClick={handleConfirmPayment} className="bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-lg w-full transition-all shadow-lg border border-blue-500/50">I’VE PAID — UNLOCK</button>
-                    <button onClick={() => setShowPaymentModal(false)} className="text-slate-500 hover:text-white font-medium text-xs py-2 uppercase tracking-wide transition-colors">Not now</button>
-                </div>
-            </div>
+  <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+    <div className="bg-[#161F32] border border-blue-500/30 rounded-xl p-6 max-w-sm w-full shadow-2xl space-y-5 relative">
+      <div className="text-center space-y-1">
+        <h3 className="text-white font-bold text-lg leading-tight">Unlock Full Catcher</h3>
+        <p className="text-blue-400 font-mono font-bold text-lg">£25 / month</p>
+      </div>
+      
+      <div className="w-full bg-emerald-600/20 text-emerald-400 font-bold py-3 rounded-lg border border-emerald-500/30 flex flex-col items-center justify-center gap-0.5">
+        <span className="text-xs uppercase tracking-wider">Money Back Guarantee</span>
+        <span className="text-[10px] opacity-90 font-medium">Make Money Month One or Your Money Back</span>
+      </div>
+
+      <div className="bg-[#0B1120] p-4 rounded-lg text-sm text-slate-300 space-y-4 border border-slate-800">
+        <div className="leading-relaxed">
+          <span className="font-bold text-white block mb-2 text-xs uppercase tracking-tight">Step 1: Secure Payment</span>
+          <a 
+            href="https://buy.stripe.com/7sY9ASeya3bT7i30sr6sw01" 
+            target="_blank" 
+            rel="noopener noreferrer" 
+            className="flex items-center justify-center w-full bg-[#635BFF] hover:bg-[#5851e5] text-white font-bold py-4 rounded-lg shadow-lg transition-all text-sm group"
+          >
+            Pay with Stripe
+          </a>
+          <div className="mt-3 flex items-center justify-between bg-black/30 border border-slate-700/50 rounded px-3 py-2">
+            <span className="text-[10px] text-slate-500 font-bold uppercase">Payment Ref:</span>
+            <span className="font-mono font-bold text-white">{paymentRef}</span>
+          </div>
         </div>
-      )}
+
+        <div className="leading-relaxed border-t border-slate-800 pt-4">
+          <span className="font-bold text-white block mb-2 text-xs uppercase tracking-tight">Step 2: Instant Activation</span>
+          <a 
+            href="https://t.me/exchange_steamers_bot" 
+            target="_blank" 
+            rel="noreferrer" 
+            className="flex items-center justify-center w-full bg-[#229ED9] hover:bg-[#1e8ebc] text-white font-bold py-3 rounded-lg shadow-md transition-all text-xs"
+          >
+            Message @Exchange_Steamers_Bot to Unlock
+          </a>
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-3 pt-2">
+        <button 
+          onClick={handleConfirmPayment} 
+          className="bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold py-3 rounded-lg w-full transition-all text-xs border border-slate-700"
+        >
+          I’VE PAID — REFRESH ACCESS
+        </button>
+        <button 
+          onClick={() => setShowPaymentModal(false)} 
+          className="text-slate-500 hover:text-white font-medium text-[10px] py-2 uppercase tracking-widest transition-colors mx-auto"
+        >
+          Not now
+        </button>
+      </div>
+    </div>
+  </div>
+)}
     </div>
   );
 }
