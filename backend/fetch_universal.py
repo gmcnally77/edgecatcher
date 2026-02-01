@@ -706,6 +706,8 @@ def fetch_betfair():
                             continue
 
                         name = runner_details.runner_name
+                        if not name:  # Skip runners with null/empty name
+                            continue
                         back = runner.ex.available_to_back[0].price if runner.ex.available_to_back else 0.0
                         lay = runner.ex.available_to_lay[0].price if runner.ex.available_to_lay else 0.0
 
