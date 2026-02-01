@@ -46,7 +46,8 @@ SPORTS_CONFIG = [
     {
         "name": "Basketball",
         "betfair_id": "7522",
-        "text_query": "NBA",
+        "competition_id": "10547864",  # <--- CRITICAL FIX: Target specific NBA ID
+        # "text_query": "NBA",         # <--- REMOVE or COMMENT OUT (Causes 0 results)
         "odds_api_key": "basketball_nba",
         "bookmakers": "pinnacle,ladbrokes_uk,paddypower"
     }

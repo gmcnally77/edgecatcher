@@ -656,6 +656,10 @@ def fetch_betfair():
                 market_projection=['MARKET_START_TIME', 'EVENT', 'COMPETITION', 'RUNNER_METADATA'],
                 sort='FIRST_TO_START'
             )
+            # [INSTRUMENTATION START]
+            if sport_conf['name'] == 'Basketball':
+                logger.info(f"🏀 DEBUG: Query='{sport_conf.get('text_query')}' | CompID='{sport_conf.get('competition_id')}' | Found={len(markets)}")
+            # [INSTRUMENTATION END]
             
             # DIAGNOSTIC LOG: Check what we actually found
             logger.info(f"🔎 SEARCH {sport_conf['name']}: Found {len(markets)} markets")
@@ -726,6 +730,13 @@ def fetch_betfair():
 
         except Exception as e:
             logger.error(f"Error fetching {sport_conf['name']}: {e}")
+
+        # [GUARDRAIL START]
+    if SCOPE_MODE.startswith("NBA") and best_price_map:
+        has_nba = any(item['sport'] == 'Basketball' for item in best_price_map.values())
+        if not has_nba:
+            logger.error("🛑 CRITICAL: NBA Scope active, but 0 Basketball markets were staged for DB sync!")
+    # [GUARDRAIL END]
 
     if best_price_map:
         try:
