@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "NBA Steam Scanner | Live Exchange vs Bookie Value",
+  title: "EdgeCatcher | Live Exchange vs Bookie Value",
   description: "Real-time pre-match arbitrage and EV scanner. Track bookmaker mispricing against betting exchanges instantly.",
 };
 
