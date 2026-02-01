@@ -77,12 +77,12 @@ const groupData = (data: any[]) => {
           if (timeDiff !== 0) return timeDiff;
 
           // Rule 3: Alphabetical (Tie-breaker)
-          return a.name.localeCompare(b.name);
+          return (a.name || '').localeCompare(b.name || '');
       });
       
-      // Sort Selections A-Z
+      // Sort Selections A-Z (with null safety)
       competitions[key].forEach(market => {
-          market.selections.sort((a: any, b: any) => a.name.localeCompare(b.name));
+          market.selections.sort((a: any, b: any) => (a.name || '').localeCompare(b.name || ''));
       });
   });
 
