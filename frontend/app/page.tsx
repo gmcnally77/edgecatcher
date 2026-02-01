@@ -8,9 +8,9 @@ import {
 } from 'lucide-react';
 
 const SPORTS = [
+  { id: 'Basketball', label: 'Basketball', icon: <Dribbble size={16} /> },
   { id: 'MMA', label: 'MMA', icon: <Swords size={16} /> },
   { id: 'NFL', label: 'NFL', icon: <Trophy size={16} /> },
-  { id: 'Basketball', label: 'Basketball', icon: <Dribbble size={16} /> },
 ];
 
 // HELPER: Normalize strings
