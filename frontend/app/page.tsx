@@ -53,12 +53,15 @@ const groupData = (data: any[]) => {
         if (market.id !== row.market_id) return; // Ignore duplicate/zombie row
     }
 
+    // Skip rows with null/empty runner_name
+    if (!row.runner_name) return;
+
     market.selections.push({
         id: row.id,
         name: row.runner_name,
         exchange: { back: row.back_price, lay: row.lay_price },
         bookmakers: {
-            pinnacle: row.price_pinnacle, 
+            pinnacle: row.price_pinnacle,
             ladbrokes: row.price_bet365,
             paddypower: row.price_paddy
         }
