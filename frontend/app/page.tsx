@@ -190,11 +190,25 @@ export default function Home() {
       const heartbeatCutoff = new Date(now.getTime() - 24 * 60 * 60 * 1000);
 
       const activeRows = data.filter((row: any) => {
+        // 1. Maintain the stale data check
         if (row.last_updated && new Date(row.last_updated) < heartbeatCutoff) return false;
+        
+        // 2. Maintain the closed market check
         if (row.market_status === 'CLOSED' || row.market_status === 'SETTLED') return false;
-        if (SCOPE_MODE.startsWith('NBA_PREMATCH_ML') && (row.in_play || new Date(row.start_time) <= now)) return false;
+
+        // 3. REVISED PRE-MATCH FILTER
+        if (SCOPE_MODE.startsWith('NBA_PREMATCH_ML')) {
+            // Trust the exchange: if it is explicitly in_play, hide it
+            if (row.in_play) return false;
+
+            // Relax the start_time check. Only hide if the game is significantly 
+            // in the past (e.g. 6 hours), which handles markets that didn't close correctly.
+            const sixHoursAgo = Date.now() - (6 * 60 * 60 * 1000);
+            if (new Date(row.start_time).getTime() < sixHoursAgo) return false;
+        }
+        
         return true; 
-      });
+        });
 
       try {
           const grouped = groupData(activeRows);
