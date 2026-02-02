@@ -185,8 +185,6 @@ export default function Home() {
       const dbCutoff = new Date();
       dbCutoff.setHours(dbCutoff.getHours() - 24); 
 
-      // console.log(`🚀 Fetching for ${activeSport}...`);
-
       // 2. Fetch from Supabase
       let { data, error } = await supabase
         .from('market_feed')
@@ -204,33 +202,31 @@ export default function Home() {
       }
 
       if (data) {
-        // DIAGNOSTIC LOGS: Use these in Console to debug empty screens
-        console.log(`✅ RAW DATA for ${activeSport}:`, data.length, "rows"); 
-        
-        const now = new Date();
-        const heartbeatCutoff = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+        const nowMs = Date.now();
 
-        // 4. Filter Logic
+        // 4. Filter Logic (UPDATED: Strictly removes Stale/In-Play)
         const activeRows = data.filter((row: any) => {
-            // Drop stale data (older than 24h)
-            if (row.last_updated && new Date(row.last_updated) < heartbeatCutoff) return false;
+            // A. FRESHNESS GUARD: If backend hasn't updated row in > 20 mins, it's dead.
+            const lastUpdateMs = row.last_updated ? new Date(row.last_updated).getTime() : 0;
+            if (nowMs - lastUpdateMs > 20 * 60 * 1000) return false;
             
-            // Drop Closed/Settled markets
+            // B. STATUS GUARD: Drop Closed/Settled markets
             if (row.market_status === 'CLOSED' || row.market_status === 'SETTLED') return false;
 
-            // Strict NBA Mode Checks
+            // C. SCOPE GUARD: Strict Checks for Pre-Match Tools
             if (SCOPE_MODE.startsWith('NBA_PREMATCH_ML')) {
-                // If the exchange says it's In-Play, hide it
+                // If the DB explicitly says it's in-play, hide it.
                 if (row.in_play) return false;
 
-                // If start time was 6+ hours ago, hide it (likely finished)
-                const sixHoursAgo = Date.now() - (6 * 60 * 60 * 1000);
-                if (new Date(row.start_time).getTime() < sixHoursAgo) return false;
+                // TIME GUARD: If start time is in the past (with 5 min buffer), hide it.
+                // This cleans up games that the backend might have missed closing.
+                const startTimeMs = new Date(row.start_time).getTime();
+                if (startTimeMs < nowMs - (5 * 60 * 1000)) return false;
             }
             return true; 
         });
 
-        console.log(`🛡️ FILTERED DATA for ${activeSport}:`, activeRows.length, "rows");
+        // console.log(`🛡️ FILTERED DATA for ${activeSport}:`, activeRows.length, "rows");
 
         try {
             const grouped = groupData(activeRows);
@@ -259,7 +255,6 @@ export default function Home() {
         clearInterval(interval);
     };
   }, [activeSport]);
-  // -----------------------------------------------------
 
   const formatTime = (isoString: string) => {
     if (!isoString) return '';

@@ -678,6 +678,12 @@ def fetch_betfair():
                 for book in market_books:
                     # SCOPE GUARD: NBA_PREMATCH_ML -> Skip In-Play
                     if SCOPE_MODE.startswith("NBA_PREMATCH_ML") and book.inplay:
+                        # 💀 EXPLICIT KILL: Mark it closed so frontend hides it immediately
+                        supabase.table('market_feed').update({
+                            'market_status': 'CLOSED',
+                            'in_play': True,
+                            'last_updated': datetime.now(timezone.utc).isoformat()
+                        }).eq('market_id', book.market_id).execute()
                         continue
 
                     market_info = next((m for m in markets if m.market_id == book.market_id), None)
