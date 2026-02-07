@@ -413,6 +413,20 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
             # Log debug counts
             logger.info(f"AsianOdds {sport_name}: teams={matches_with_teams}, odds={matches_with_odds}, PIN={matches_with_pin}")
 
+            # Debug: Check if any DB teams appear in AsianOdds feed at all
+            if sport_name == 'Soccer' and matches_with_teams > 0:
+                db_teams = set(r['norm_runner'] for r in active_rows if r['sport'] == sport_name and 'draw' not in r['norm_runner'].lower())
+                ao_teams = set()
+                for sf in feeds:
+                    for m in sf.get('MatchGames', []) or []:
+                        ht = (m.get('HomeTeam') or {}).get('Name', '')
+                        at = (m.get('AwayTeam') or {}).get('Name', '')
+                        if ht: ao_teams.add(normalize(ht))
+                        if at: ao_teams.add(normalize(at))
+                overlap = db_teams & ao_teams
+                if overlap:
+                    logger.info(f"AsianOdds {sport_name} OVERLAP with DB: {list(overlap)[:5]}")
+
         except Exception as e:
             logger.error(f"AsianOdds fetch error for {sport_name}: {e}")
 
