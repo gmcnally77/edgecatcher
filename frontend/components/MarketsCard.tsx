@@ -8,7 +8,7 @@ const formatTime = (isoString: string) => {
   });
 };
 
-const formatPrice = (p: number) => (p && p > 1 ? p.toFixed(3) : '—');
+const formatPrice = (p: number, dp: number = 2) => (p && p > 1 ? p.toFixed(dp) : '—');
 
 // --- SUB-COMPONENTS ---
 
@@ -49,7 +49,7 @@ const BookieBox = ({ label, price, isBest, hasEdge }: { label: string, price: nu
         {label}
       </span>
       <span className="font-mono text-sm font-bold tracking-tighter">
-        {formatPrice(price)}
+        {formatPrice(price, label === 'PIN' ? 3 : 2)}
       </span>
     </div>
   );
