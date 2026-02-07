@@ -54,7 +54,8 @@ class AsianOddsClient:
             text = resp.text.lstrip('\ufeff')
             data = __import__('json').loads(text)
 
-            self.last_activity = time.time()
+            if isinstance(data, dict) and data.get("Code") == 0:
+                self.last_activity = time.time()
             return data
 
         except Exception as e:
@@ -73,9 +74,10 @@ class AsianOddsClient:
         data = self._request("GET", "Login", params, use_service_url=False)
 
         if not data or data.get("Code") != 0:
+            code = data.get("Code") if data else None
             result = (data.get("Result") or {}) if data else {}
             error_msg = result.get("TextMessage", "No response") if isinstance(result, dict) else "No response"
-            logger.error(f"AsianOdds login failed: {error_msg}")
+            logger.error(f"AsianOdds login failed: Code={code}, Message={error_msg}")
             return False
 
         result = data.get("Result") or {}
@@ -96,9 +98,10 @@ class AsianOddsClient:
         data = self._request("GET", "Register", params)
 
         if not data or data.get("Code") != 0:
+            code = data.get("Code") if data else None
             result = (data.get("Result") or {}) if data else {}
             error_msg = result.get("TextMessage", "No response") if isinstance(result, dict) else "No response"
-            logger.error(f"AsianOdds register failed: {error_msg}")
+            logger.error(f"AsianOdds register failed: Code={code}, Message={error_msg}")
             return False
 
         logger.info("AsianOdds registration successful")
@@ -177,11 +180,26 @@ class AsianOddsClient:
         if not data:
             logger.warning("GetFeeds failed: No response")
             return []
+
         if data.get("Code") != 0:
+            code = data.get("Code")
             result = data.get("Result") or {}
             error_msg = result.get("TextMessage", "Unknown error") if isinstance(result, dict) else "Unknown error"
-            logger.warning(f"GetFeeds failed: {error_msg}")
-            return []
+            logger.warning(f"GetFeeds failed: Code={code}, Message={error_msg}, Result={result}")
+
+            # Auto-recover from auth errors (Code -4 = AOToken invalid)
+            if code == -4:
+                logger.info("Token invalid (Code -4), re-authenticating...")
+                self.ao_token = None
+                self.ao_key = None
+                if not self.login() or not self.register():
+                    return []
+                # Retry once
+                data = self._request("GET", "GetFeeds", params)
+                if not data or data.get("Code") != 0:
+                    return []
+            else:
+                return []
 
         result = data.get("Result") or {}
         return result.get("Sports", []) if isinstance(result, dict) else []
@@ -262,16 +280,16 @@ class AsianOddsClient:
             try:
                 price_parts = prices_str.split(",")
                 if len(price_parts) >= 3 and price_parts[2]:
-                    # 3-way market (soccer 1X2): format is home,draw,away
+                    # 3-way market (soccer 1X2): format is home,away,draw
                     home_price = float(price_parts[0]) if price_parts[0] else 0
-                    draw_price = float(price_parts[1]) if price_parts[1] else 0
-                    away_price = float(price_parts[2]) if price_parts[2] else 0
+                    away_price = float(price_parts[1]) if price_parts[1] else 0
+                    draw_price = float(price_parts[2]) if price_parts[2] else 0
 
                     if home_price > 1.0 and away_price > 1.0:
                         result[bookie] = {
                             "home": home_price,
-                            "draw": draw_price,
-                            "away": away_price
+                            "away": away_price,
+                            "draw": draw_price
                         }
                 elif len(price_parts) >= 2:
                     # 2-way market (basketball ML, MMA): format is home,away
