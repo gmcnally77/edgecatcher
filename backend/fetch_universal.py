@@ -219,6 +219,15 @@ def strip_team_prefix(name):
             return name[len(prefix):]
     return name
 
+def strip_team_suffix(name):
+    """Strip common football suffixes: 'ipswichtown' → 'ipswich', 'leicestercity' → 'leicester'."""
+    suffixes = ['hovealbion', 'wanderers', 'hotspur', 'athletic', 'united', 'albion',
+                'rovers', 'county', 'orient', 'rangers', 'argyle', 'town', 'city']
+    for suffix in suffixes:
+        if name.endswith(suffix) and len(name) > len(suffix) + 3:
+            return name[:-len(suffix)]
+    return name
+
 def check_match(name_a, name_b):
     if not name_a or not name_b: return False
     if name_a == name_b: return True
@@ -252,6 +261,16 @@ def team_in_event(team_norm, event_norm):
     if stripped != team_norm and len(stripped) > 4 and stripped in event_norm:
         return True
 
+    # Try with common suffix stripped (ipswichtown → ipswich, leicestercity → leicester)
+    core = strip_team_suffix(team_norm)
+    if core != team_norm and len(core) > 4 and core in event_norm:
+        return True
+
+    # Try both prefix and suffix stripped (AFC Bournemouth FC → bournemouth)
+    core_stripped = strip_team_suffix(stripped) if stripped != team_norm else ''
+    if core_stripped and core_stripped != stripped and len(core_stripped) > 4 and core_stripped in event_norm:
+        return True
+
     # Collect all aliases for this team
     aliases = set()
     if team_norm in ALIAS_MAP:
@@ -263,9 +282,12 @@ def team_in_event(team_norm, event_norm):
     for alias in aliases:
         if len(alias) > 4 and alias in event_norm:
             return True
-        # Also try alias with prefix stripped
+        # Also try alias with prefix/suffix stripped
         stripped_alias = strip_team_prefix(alias)
         if stripped_alias != alias and len(stripped_alias) > 4 and stripped_alias in event_norm:
+            return True
+        core_alias = strip_team_suffix(alias)
+        if core_alias != alias and len(core_alias) > 4 and core_alias in event_norm:
             return True
     return False
 
@@ -494,13 +516,26 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
                             src = 'PIN' if 'PIN' in parsed_odds else 'SIN'
                             logger.info(f"✓ {src}: {row['runner_name']} @ {pin_price}")
 
-                    # Debug: log first 3 unmatched PIN entries per sport
-                    if not ao_matched_this and ao_unmatched_samples < 3:
-                        ao_unmatched_samples += 1
-                        sport_rows = [r for r in active_rows if r['sport'] == sport_name]
-                        sample_runners = [f"{r['norm_runner']}|{r['norm_event']}" for r in sport_rows[:3]]
-                        logger.info(f"  UNMATCHED PIN: AO={home_team} vs {away_team} | norm={norm_home} vs {norm_away}")
-                        logger.info(f"    DB samples: {sample_runners}")
+                    # Debug: log first 5 unmatched EPL/NBA entries with failure reason
+                    if not ao_matched_this and ao_unmatched_samples < 5:
+                        league = match.get('LeagueName', '')
+                        is_target = ('PREMIER' in league.upper() and sport_name == 'Soccer') or \
+                                    (sport_name == 'Basketball') or (sport_name == 'MMA')
+                        if is_target:
+                            ao_unmatched_samples += 1
+                            # Find WHY it didn't match
+                            sport_rows = [r for r in active_rows if r['sport'] == sport_name]
+                            for r in sport_rows[:5]:
+                                home_ok = check_match(norm_home, r['norm_runner'])
+                                away_ok = check_match(norm_away, r['norm_runner'])
+                                runner_ok = home_ok or away_ok or (sport_name == 'Soccer' and 'draw' in r['norm_runner'].lower())
+                                ev_home = team_in_event(norm_home, r['norm_event'])
+                                ev_away = team_in_event(norm_away, r['norm_event'])
+                                if runner_ok and not (ev_home and ev_away):
+                                    logger.info(f"  NEAR-MISS: AO={home_team} vs {away_team} [{league}]")
+                                    logger.info(f"    DB runner={r['runner_name']} event={r['event_name']}")
+                                    logger.info(f"    runner_ok={runner_ok} ev_home={ev_home} ev_away={ev_away}")
+                                    break
 
             # Diagnostic: show PIN data availability
             sport_rows = [r for r in active_rows if r['sport'] == sport_name]
