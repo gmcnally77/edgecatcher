@@ -7,9 +7,19 @@ import os
 import hashlib
 import requests
 import json
+from pathlib import Path
 
-# Credentials from .env
-USERNAME = os.getenv("ASIANODDS_USERNAME", "Vexel77")
+# Load .env file
+env_path = Path(__file__).parent.parent / ".env"
+if env_path.exists():
+    with open(env_path) as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                key, val = line.split("=", 1)
+                os.environ.setdefault(key.strip(), val.strip())
+
+USERNAME = os.getenv("ASIANODDS_USERNAME")
 PASSWORD = os.getenv("ASIANODDS_PASSWORD")
 
 BASE_URL = "https://webapi.asianodds88.com/AsianOddsService"
@@ -67,8 +77,8 @@ def parse_bookie_odds(odds_string):
     return None
 
 def main():
-    if not PASSWORD:
-        print("Set ASIANODDS_PASSWORD environment variable")
+    if not PASSWORD or not USERNAME:
+        print("Missing ASIANODDS credentials in .env file")
         return
 
     # Login
@@ -103,8 +113,8 @@ def main():
 
     # Sport configs: (sport_id, name, league_filter)
     sports = [
-        (1, "EPL (Soccer)", ["english premier", "premier league", "england premier"]),
-        (3, "NBA (Basketball)", ["nba"]),
+        (1, "EPL (Soccer)", ["english premier"]),
+        (2, "NBA (Basketball)", ["nba"]),
         (9, "UFC (MMA)", ["ufc"]),
     ]
 

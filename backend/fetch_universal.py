@@ -313,8 +313,10 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
                         continue
 
                     # Team names are nested: HomeTeam.Name, AwayTeam.Name
-                    home_team = match.get('HomeTeam', {}).get('Name', '')
-                    away_team = match.get('AwayTeam', {}).get('Name', '')
+                    home_obj = match.get('HomeTeam') or {}
+                    away_obj = match.get('AwayTeam') or {}
+                    home_team = home_obj.get('Name', '') if isinstance(home_obj, dict) else ''
+                    away_team = away_obj.get('Name', '') if isinstance(away_obj, dict) else ''
 
                     if not home_team or not away_team:
                         continue
@@ -323,7 +325,7 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
                     norm_away = normalize(away_team)
 
                     # Get 1X2 odds (used by both Soccer and MMA)
-                    market_data = match.get('FullTimeOneXTwo', {})
+                    market_data = match.get('FullTimeOneXTwo') or {}
 
                     bookie_odds_str = market_data.get('BookieOdds', '')
 
