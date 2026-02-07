@@ -311,9 +311,9 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
                 cache_age = now - _asianodds_cache_time.get(cache_key, 0)
 
                 if cache_key in _asianodds_cache and cache_age < ttl:
-                    # Use cached data - filter out any None values
-                    cached = _asianodds_cache[cache_key] or []
-                    all_matches.extend([m for m in cached if m and isinstance(m, dict)])
+                    # Use cached data (dict keyed by home_away)
+                    cached = _asianodds_cache[cache_key] or {}
+                    all_matches.extend([m for m in cached.values() if m and isinstance(m, dict)])
                 else:
                     # Fetch fresh — delay between calls to avoid Code -810 rate limit
                     last_fetch = getattr(fetch_asianodds_prices, '_last_fetch_time', 0)
@@ -330,14 +330,31 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
                             if sf and isinstance(sf, dict):
                                 matches.extend(sf.get('MatchGames', []) or [])
 
-                    # Filter out any None values before caching
+                    # Filter out any None values
                     filtered = [m for m in matches if m and isinstance(m, dict)]
-                    _asianodds_cache[cache_key] = filtered
+
+                    # MERGE into existing cache — API returns full snapshot on first
+                    # call after login, then incremental updates on subsequent calls.
+                    # We key by home+away team name so updates refresh prices while
+                    # preserving matches not in the incremental batch.
+                    existing = _asianodds_cache.get(cache_key, {})
+                    if not isinstance(existing, dict):
+                        existing = {}  # reset if old format
+
+                    for m in filtered:
+                        home_obj = m.get('HomeTeam') or {}
+                        away_obj = m.get('AwayTeam') or {}
+                        h = home_obj.get('Name', '') if isinstance(home_obj, dict) else ''
+                        a = away_obj.get('Name', '') if isinstance(away_obj, dict) else ''
+                        if h and a:
+                            existing[f"{h}_{a}"] = m
+
+                    _asianodds_cache[cache_key] = existing
                     _asianodds_cache_time[cache_key] = time.time()
-                    all_matches.extend(filtered)
+                    all_matches.extend(existing.values())
 
                     mtype_name = "Today" if market_type == 2 else "Early"
-                    logger.info(f"AsianOdds {sport_name} {mtype_name}: {len(matches)} matches")
+                    logger.info(f"AsianOdds {sport_name} {mtype_name}: {len(filtered)} fresh, {len(existing)} total cached")
 
             feeds = [{'MatchGames': all_matches}] if all_matches else []
 
