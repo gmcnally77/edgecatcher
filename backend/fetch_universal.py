@@ -360,7 +360,6 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
     for sport_name, sport_id in ASIANODDS_SPORT_MAP.items():
         ao_has_pin = 0
         ao_skipped_no_pin = 0
-        ao_unmatched_samples = 0
         try:
             # Fetch Live, Today, and Early with separate TTLs
             # NBA only appears in Live market (market_type=1) — not in Today/Early
@@ -534,84 +533,9 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
                             src = 'PIN' if 'PIN' in parsed_odds else 'SIN'
                             logger.info(f"✓ {src}: {row['runner_name']} @ {pin_price}")
 
-                    # Debug: log first 5 unmatched EPL/NBA entries with failure reason
-                    if not ao_matched_this and ao_unmatched_samples < 5:
-                        league = match.get('LeagueName', '')
-                        is_target = ('PREMIER' in league.upper() and sport_name == 'Soccer') or \
-                                    (sport_name == 'Basketball') or (sport_name == 'MMA')
-                        if is_target:
-                            ao_unmatched_samples += 1
-                            # Find WHY it didn't match
-                            sport_rows = [r for r in active_rows if r['sport'] == sport_name]
-                            for r in sport_rows[:5]:
-                                home_ok = check_match(norm_home, r['norm_runner'])
-                                away_ok = check_match(norm_away, r['norm_runner'])
-                                runner_ok = home_ok or away_ok or (sport_name == 'Soccer' and 'draw' in r['norm_runner'].lower())
-                                ev_home = team_in_event(norm_home, r['norm_event'])
-                                ev_away = team_in_event(norm_away, r['norm_event'])
-                                if runner_ok and not (ev_home and ev_away):
-                                    logger.info(f"  NEAR-MISS: AO={home_team} vs {away_team} [{league}]")
-                                    logger.info(f"    DB runner={r['runner_name']} event={r['event_name']}")
-                                    logger.info(f"    runner_ok={runner_ok} ev_home={ev_home} ev_away={ev_away}")
-                                    break
-
-            # Diagnostic: show PIN data availability
+            # Summary line per sport
             sport_rows = [r for r in active_rows if r['sport'] == sport_name]
             logger.info(f"AO {sport_name}: {ao_has_pin} with PIN, {ao_skipped_no_pin} without PIN, {len(sport_rows)} DB rows")
-
-            # For Soccer: count EPL matches in cache and show which have PIN
-            if sport_name == 'Soccer' and all_matches:
-                epl_total = 0
-                epl_with_pin = 0
-                epl_without_pin_samples = []
-                ao_client_ref = get_asianodds_client()
-                for m in all_matches:
-                    league = (m.get('LeagueName') or '').upper()
-                    if 'ENGLISH PREMIER' in league and 'U21' not in league and 'U23' not in league:
-                        epl_total += 1
-                        odds_str = (m.get('FullTimeOneXTwo') or {}).get('BookieOdds', '')
-                        parsed = ao_client_ref.parse_bookie_odds(odds_str) if ao_client_ref and odds_str else {}
-                        has_pin = 'PIN' in parsed or 'SIN' in parsed
-                        if has_pin:
-                            epl_with_pin += 1
-                        elif len(epl_without_pin_samples) < 3:
-                            h = ((m.get('HomeTeam') or {}).get('Name', '') or m.get('HomeTeamName', '')).lower()
-                            a = ((m.get('AwayTeam') or {}).get('Name', '') or m.get('AwayTeamName', '')).lower()
-                            bookies = list(parsed.keys())[:5] if parsed else ['(no odds)']
-                            epl_without_pin_samples.append(f"{h} vs {a} bookies={bookies}")
-                logger.info(f"  EPL in cache: {epl_total} total, {epl_with_pin} with PIN/SIN")
-                if epl_without_pin_samples:
-                    for s in epl_without_pin_samples:
-                        logger.info(f"    EPL no PIN: {s}")
-
-            # For Basketball: show unique leagues and find NBA-like matches
-            if sport_name == 'Basketball' and all_matches:
-                leagues = {}
-                nba_teams = ['lakers', 'celtics', 'warriors', 'hornets', 'bucks', 'nets', 'knicks', 'bulls', 'heat', 'cavaliers']
-                nba_found = []
-                for m in all_matches:
-                    league = m.get('LeagueName', '(none)')
-                    leagues[league] = leagues.get(league, 0) + 1
-                    # Also search by team name
-                    h = ((m.get('HomeTeam') or {}).get('Name', '') or m.get('HomeTeamName', '')).lower()
-                    a = ((m.get('AwayTeam') or {}).get('Name', '') or m.get('AwayTeamName', '')).lower()
-                    for t in nba_teams:
-                        if t in h or t in a:
-                            ml = m.get('FullTimeMoneyLine') or {}
-                            x2 = m.get('FullTimeOneXTwo') or {}
-                            ml_odds = (ml.get('BookieOdds') or '')[:80] if isinstance(ml, dict) else ''
-                            x2_odds = (x2.get('BookieOdds') or '')[:80] if isinstance(x2, dict) else ''
-                            nba_found.append(f"{h} vs {a} [{league}] ML={ml_odds or 'N/A'} 1X2={x2_odds or 'N/A'}")
-                            break
-                # Show top 5 leagues by match count
-                top_leagues = sorted(leagues.items(), key=lambda x: -x[1])[:5]
-                logger.info(f"  Basketball leagues: {top_leagues}")
-                if nba_found:
-                    logger.info(f"  NBA-like matches: {len(nba_found)}")
-                    for s in nba_found[:3]:
-                        logger.info(f"    {s}")
-                else:
-                    logger.info(f"  No NBA team names found in {len(all_matches)} basketball matches")
 
         except Exception as e:
             logger.error(f"AsianOdds fetch error for {sport_name}: {e}")
@@ -972,9 +896,6 @@ def run_spy():
                     }
             if asian_prices:
                 logger.info(f"🇸🇬 AsianOdds: Applied {len(asian_prices)} sharp prices")
-                for rid, ap in asian_prices.items():
-                    final_pin = updates.get(rid, {}).get('price_pinnacle')
-                    logger.info(f"  DB_WRITE row={rid}: pin={final_pin} (asian={ap.get('price_pinnacle')})")
 
             # Clear stale PIN prices for AO-sport rows that didn't get a match this cycle.
             # Prevents false matches from persisting after matching logic is fixed.
