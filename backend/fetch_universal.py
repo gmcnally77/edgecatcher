@@ -38,8 +38,8 @@ except ImportError:
 
 # --- SCOPE GUARD: RUNTIME FILTER ---
 if SCOPE_MODE.startswith("NBA_PREMATCH_ML"):
-    logger.info(f"🔒 SCOPE_MODE ACTIVE: {SCOPE_MODE} (Filtering to Basketball & MMA)")
-    SPORTS_CONFIG = [s for s in SPORTS_CONFIG if s['name'] in ['Basketball', 'MMA']]
+    logger.info(f"🔒 SCOPE_MODE ACTIVE: {SCOPE_MODE} (Filtering to Basketball, MMA & Soccer)")
+    SPORTS_CONFIG = [s for s in SPORTS_CONFIG if s['name'] in ['Basketball', 'MMA', 'Soccer']]
 
 # --- SETUP ---
 supabase: Client = create_client(config.SUPABASE_URL, config.SUPABASE_KEY)
