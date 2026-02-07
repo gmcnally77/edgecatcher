@@ -208,8 +208,9 @@ def run_alert_cycle(supabase_client):
                 edge_pct = round(edge * 100, 2)
                 raw_diff = round(price_diff_pct * 100, 2)
                 
+                sport = row.get('sport', 'NBA')
                 msg = (
-                    f"🔥 <b>NBA STEAMER: {runner_name}</b>\n\n"
+                    f"🔥 <b>{sport.upper()} STEAMER: {runner_name}</b>\n\n"
                     f"🚀 <b>Gap: +{raw_diff}%</b> (Edge {edge_pct}%)\n"
                     f"🏦 {bookie_name}: <b>{book_price}</b>\n"
                     f"🔄 Exchange: <b>{back_price} / {lay_price}</b>\n"
