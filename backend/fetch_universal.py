@@ -221,7 +221,7 @@ def strip_team_prefix(name):
 
 def strip_team_suffix(name):
     """Strip common football suffixes: 'ipswichtown' → 'ipswich', 'leicestercity' → 'leicester'."""
-    suffixes = ['hovealbion', 'wanderers', 'hotspur', 'athletic', 'united', 'albion',
+    suffixes = ['andhovealbion', 'hovealbion', 'wanderers', 'hotspur', 'athletic', 'united', 'albion',
                 'rovers', 'county', 'orient', 'rangers', 'argyle', 'town', 'city']
     for suffix in suffixes:
         if name.endswith(suffix) and len(name) > len(suffix) + 3:
