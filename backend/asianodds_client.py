@@ -102,6 +102,9 @@ class AsianOddsClient:
             result = (data.get("Result") or {}) if data else {}
             error_msg = result.get("TextMessage", "No response") if isinstance(result, dict) else "No response"
             logger.error(f"AsianOdds register failed: Code={code}, Message={error_msg}")
+            # Clear tokens so next ensure_authenticated forces full re-auth
+            self.ao_token = None
+            self.ao_key = None
             return False
 
         logger.info("AsianOdds registration successful")
@@ -187,9 +190,9 @@ class AsianOddsClient:
             error_msg = result.get("TextMessage", "Unknown error") if isinstance(result, dict) else "Unknown error"
             logger.warning(f"GetFeeds failed: Code={code}, Message={error_msg}, Result={result}")
 
-            # Auto-recover from auth errors (Code -4 = AOToken invalid)
-            if code == -4:
-                logger.info("Token invalid (Code -4), re-authenticating...")
+            # Auto-recover from auth/session errors (any negative code)
+            if isinstance(code, int) and code < 0:
+                logger.info(f"Session error (Code {code}), re-authenticating...")
                 self.ao_token = None
                 self.ao_key = None
                 if not self.login() or not self.register():
