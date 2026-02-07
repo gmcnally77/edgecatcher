@@ -305,23 +305,40 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
 
             logger.info(f"AsianOdds: Got {len(feeds)} sport feeds for {sport_name}")
 
+            # Debug counters
+            matches_with_teams = 0
+            matches_with_odds = 0
+            matches_with_pin = 0
+
             # Parse through the nested structure
             for sport_feed in feeds:
                 match_games = sport_feed.get('MatchGames', []) or []
+
+                # Debug: log first match structure
+                if match_games:
+                    first = match_games[0]
+                    logger.info(f"AsianOdds {sport_name} sample: HomeTeam={first.get('HomeTeam')}, HomeTeamName={first.get('HomeTeamName')}")
 
                 for match in match_games:
                     if not match or not isinstance(match, dict):
                         continue
 
-                    # Team names are nested: HomeTeam.Name, AwayTeam.Name
+                    # Team names - try nested first, then flat
                     home_obj = match.get('HomeTeam') or {}
                     away_obj = match.get('AwayTeam') or {}
                     home_team = home_obj.get('Name', '') if isinstance(home_obj, dict) else ''
                     away_team = away_obj.get('Name', '') if isinstance(away_obj, dict) else ''
 
+                    # Fallback to flat field names
+                    if not home_team:
+                        home_team = match.get('HomeTeamName', '')
+                    if not away_team:
+                        away_team = match.get('AwayTeamName', '')
+
                     if not home_team or not away_team:
                         continue
 
+                    matches_with_teams += 1
                     norm_home = normalize(home_team)
                     norm_away = normalize(away_team)
 
@@ -333,11 +350,16 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
                     if not bookie_odds_str:
                         continue
 
+                    matches_with_odds += 1
+
                     # Parse the bookie odds
                     parsed_odds = ao_client.parse_bookie_odds(bookie_odds_str)
 
                     if not parsed_odds:
                         continue
+
+                    if 'PIN' in parsed_odds:
+                        matches_with_pin += 1
 
                     # Find matching rows in our DB
                     for row in active_rows:
@@ -381,11 +403,16 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
                             if DEBUG_MODE:
                                 logger.info(f"AsianOdds Match: {row['runner_name']} -> PIN @ {pin_price}")
 
+            # Log debug counts
+            logger.info(f"AsianOdds {sport_name}: teams={matches_with_teams}, odds={matches_with_odds}, PIN={matches_with_pin}")
+
         except Exception as e:
             logger.error(f"AsianOdds fetch error for {sport_name}: {e}")
 
     if updates:
         logger.info(f"🎯 AsianOdds: Matched {len(updates)} prices")
+    else:
+        logger.info(f"AsianOdds: No prices matched to DB rows")
 
     return updates
 
