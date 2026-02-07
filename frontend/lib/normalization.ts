@@ -8,8 +8,11 @@
  */
 export function normalizeRunnerName(name: string): string {
   if (!name) return '';
-  
+
   let clean = name.toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // Remove diacritical marks (é -> e, ñ -> n)
+    .replace(/ł/g, 'l')  // Polish ł -> l (Syguła -> Sygula)
+    .replace(/ø/g, 'o')  // Nordic ø -> o
     .replace(/\./g, '') // St. Louis -> St Louis
     .replace(/'/g, '')  // O'Malley -> OMalley
     .replace(/-/g, ' ') // hyphen to space
