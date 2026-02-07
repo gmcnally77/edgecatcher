@@ -293,7 +293,7 @@ export default function Home() {
 
   const formatPrice = (price: number | null) => {
       if (!price || price <= 1.0) return '—';
-      return price.toFixed(2);
+      return price.toFixed(3);
   };
 
   return (
@@ -456,7 +456,7 @@ export default function Home() {
                                                                 // ALWAYS SHOW TEXT (Even if negative)
                                                                 valueText = (
                                                                      <span className="text-xs md:text-[10px] text-slate-500 mt-1 font-mono block">
-                                                                         Best: <span className="text-slate-300 font-bold">{bestBookName} {bestBookPrice.toFixed(2)}</span> <span className={textColor}>({sign}{edge.toFixed(1)}%)</span>
+                                                                         Best: <span className="text-slate-300 font-bold">{bestBookName} {bestBookPrice.toFixed(3)}</span> <span className={textColor}>({sign}{edge.toFixed(1)}%)</span>
                                                                      </span>
                                                                 );
 
@@ -607,7 +607,7 @@ export default function Home() {
 const PriceBox = ({ label, price, type }: any) => (
     <div className={`w-[52px] h-[48px] md:h-[44px] rounded flex flex-col items-center justify-center border flex-none ${type === 'back' ? 'bg-[#0f172a] border-blue-500/30' : 'bg-[#1a0f14] border-pink-500/40'}`}>
         <span className={`text-[10px] md:text-[9px] font-bold leading-none mb-0.5 uppercase ${type === 'back' ? 'text-blue-500' : 'text-pink-500'}`}>{label}</span>
-        <span className={`text-sm font-bold leading-none ${type === 'back' ? 'text-blue-400' : 'text-pink-400'}`}>{price ? price.toFixed(2) : '—'}</span>
+        <span className={`text-sm font-bold leading-none ${type === 'back' ? 'text-blue-400' : 'text-pink-400'}`}>{price ? price.toFixed(3) : '—'}</span>
     </div>
 );
 
@@ -629,7 +629,7 @@ const BookieBox = ({ label, price, color, isBest }: any) => {
     return (
         <div className={`w-[52px] h-[48px] md:h-[44px] rounded flex flex-col items-center justify-center border transition-all flex-none bg-gradient-to-b ${baseStyle} ${activeStyle}`}>
             <span className="text-[10px] md:text-[9px] font-bold leading-none mb-0.5 uppercase opacity-90">{label}</span>
-            <span className={`text-sm font-bold leading-none ${isBest ? 'text-white' : ''}`}>{price && price > 1 ? price.toFixed(2) : '—'}</span>
+            <span className={`text-sm font-bold leading-none ${isBest ? 'text-white' : ''}`}>{price && price > 1 ? price.toFixed(3) : '—'}</span>
         </div>
     );
 };

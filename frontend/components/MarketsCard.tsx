@@ -8,7 +8,7 @@ const formatTime = (isoString: string) => {
   });
 };
 
-const formatPrice = (p: number) => (p && p > 1 ? p.toFixed(2) : '—');
+const formatPrice = (p: number) => (p && p > 1 ? p.toFixed(3) : '—');
 
 // --- SUB-COMPONENTS ---
 
