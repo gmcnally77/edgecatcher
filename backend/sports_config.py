@@ -21,26 +21,34 @@ SPORTS_CONFIG = [
         "use_williamhill_as_primary": True, # Map WH to the middle column
         "strict_mode": False
     },
-    # --- AMERICAN FOOTBALL (WORKING) ---
+    # --- AMERICAN FOOTBALL (OFF-SEASON - DISABLED) ---
+    # {
+    #     "name": "NFL",
+    #     "betfair_id": "6423",
+    #     "text_query": "NFL",
+    #     "odds_api_key": "americanfootball_nfl"
+    # },
+    # {
+    #     "name": "NFL",
+    #     "betfair_id": "6423",
+    #     "text_query": "NCAA Football",
+    #     "odds_api_key": "americanfootball_ncaaf",
+    #     "strict_mode": False  # Force fuzzy matching for high-variance NCAA names
+    # },
+    # {
+    #     "name": "NFL",
+    #     "betfair_id": "6423",
+    #     "text_query": "FCS",
+    #     "odds_api_key": "americanfootball_ncaaf",
+    #     "strict_mode": False  # <--- MUST BE FALSE
+    # },
+    # --- SOCCER ---
     {
-        "name": "NFL",
-        "betfair_id": "6423",
-        "text_query": "NFL",
-        "odds_api_key": "americanfootball_nfl"
-    },
-    {
-        "name": "NFL", 
-        "betfair_id": "6423",
-        "text_query": "NCAA Football",
-        "odds_api_key": "americanfootball_ncaaf",
-        "strict_mode": False  # Force fuzzy matching for high-variance NCAA names
-    },
-    {
-        "name": "NFL",
-        "betfair_id": "6423",
-        "text_query": "FCS",
-        "odds_api_key": "americanfootball_ncaaf",
-        "strict_mode": False  # <--- MUST BE FALSE
+        "name": "Soccer",
+        "betfair_id": "1",
+        "text_query": "English Premier League",
+        "odds_api_key": "soccer_epl",
+        "bookmakers": "pinnacle,williamhill,paddypower,ladbrokes_uk"
     },
     # --- BASKETBALL (RESTRICTED TO NBA ONLY) ---
     {

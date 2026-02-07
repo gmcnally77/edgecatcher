@@ -364,9 +364,14 @@ def run_spy():
                 ttl = 3600 
         elif sport['name'] == 'Basketball':
             if min_seconds_away < 43200:   # 12 Hours before Tip: 2 mins
-                ttl = 120 
+                ttl = 120
             else:                          # Maintenance: 5 mins
-                ttl = 300 
+                ttl = 300
+        elif sport['name'] == 'Soccer':
+            if min_seconds_away < 43200:   # 12 Hours before Kickoff: 2 mins
+                ttl = 120
+            else:                          # Maintenance: 5 mins
+                ttl = 300
         else:
             ttl = 3600 # Fallback
 

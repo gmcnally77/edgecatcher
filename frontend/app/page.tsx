@@ -1,16 +1,17 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { supabase } from '../utils/supabase';
-import { 
-  RefreshCw, TrendingUp, Clock, Radio, Lock, Unlock, 
+import {
+  RefreshCw, TrendingUp, Clock, Radio, Lock, Unlock,
   Swords, Trophy, Dribbble, AlertCircle, Copy, Check, Search,
-  Radar 
+  Radar, Circle
 } from 'lucide-react';
 
 const SPORTS = [
   { id: 'Basketball', label: 'Basketball', icon: <Dribbble size={16} /> },
   { id: 'MMA', label: 'MMA', icon: <Swords size={16} /> },
-  { id: 'NFL', label: 'NFL', icon: <Trophy size={16} /> },
+  { id: 'Soccer', label: 'Soccer', icon: <Circle size={16} /> },
+  // { id: 'NFL', label: 'NFL', icon: <Trophy size={16} /> },  // Off-season
 ];
 
 // HELPER: Normalize strings
