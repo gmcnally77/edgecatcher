@@ -246,6 +246,12 @@ def team_in_event(team_norm, event_norm):
     """Check if a team name (or any known alias) appears in the event string."""
     if team_norm in event_norm:
         return True
+
+    # Try with common prefix stripped (AFC Bournemouth → bournemouth)
+    stripped = strip_team_prefix(team_norm)
+    if stripped != team_norm and len(stripped) > 4 and stripped in event_norm:
+        return True
+
     # Collect all aliases for this team
     aliases = set()
     if team_norm in ALIAS_MAP:
@@ -256,6 +262,10 @@ def team_in_event(team_norm, event_norm):
             aliases.update(vals)
     for alias in aliases:
         if len(alias) > 4 and alias in event_norm:
+            return True
+        # Also try alias with prefix stripped
+        stripped_alias = strip_team_prefix(alias)
+        if stripped_alias != alias and len(stripped_alias) > 4 and stripped_alias in event_norm:
             return True
     return False
 
@@ -406,7 +416,9 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
 
                     # Parse the bookie odds
                     parsed_odds = ao_client.parse_bookie_odds(bookie_odds_str)
-                    if not parsed_odds or 'PIN' not in parsed_odds:
+                    # Accept PIN (direct Pinnacle) or SIN (Singbet = Pinnacle redistributor)
+                    has_pinnacle = 'PIN' in parsed_odds or 'SIN' in parsed_odds
+                    if not parsed_odds or not has_pinnacle:
                         ao_skipped_no_pin += 1
                         continue
 
@@ -442,8 +454,8 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
                         if not event_match:
                             continue
 
-                        # Get Pinnacle price only (not best across all bookies)
-                        pin_odds = parsed_odds.get('PIN', {})
+                        # Get Pinnacle price — prefer PIN (direct), fallback SIN (Singbet)
+                        pin_odds = parsed_odds.get('PIN') or parsed_odds.get('SIN') or {}
                         pin_price = pin_odds.get(side, 0)
 
                         if pin_price and pin_price > 1.01:
@@ -452,7 +464,8 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
                                 'price_pinnacle': pin_price
                             }
                             ao_matched_this = True
-                            logger.info(f"✓ PIN: {row['runner_name']} @ {pin_price}")
+                            src = 'PIN' if 'PIN' in parsed_odds else 'SIN'
+                            logger.info(f"✓ {src}: {row['runner_name']} @ {pin_price}")
 
                     # Debug: log first 3 unmatched PIN entries per sport
                     if not ao_matched_this and ao_unmatched_samples < 3:
