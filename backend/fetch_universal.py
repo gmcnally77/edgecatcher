@@ -975,6 +975,33 @@ def run_spy():
                 for rid, ap in asian_prices.items():
                     final_pin = updates.get(rid, {}).get('price_pinnacle')
                     logger.info(f"  DB_WRITE row={rid}: pin={final_pin} (asian={ap.get('price_pinnacle')})")
+
+            # Clear stale PIN prices for AO-sport rows that didn't get a match this cycle.
+            # Prevents false matches from persisting after matching logic is fixed.
+            ao_matched_ids = set(asian_prices.keys())
+            stale_cleared = 0
+            for row in active_rows:
+                if row['sport'] not in ASIANODDS_SPORT_MAP:
+                    continue
+                row_id = row['id']
+                if row_id in ao_matched_ids:
+                    continue
+                orig_row = id_to_row_map.get(row_id, {})
+                if orig_row.get('price_pinnacle') is not None:
+                    if row_id in updates:
+                        updates[row_id]['price_pinnacle'] = None
+                    else:
+                        updates[row_id] = {
+                            'id': row_id,
+                            'sport': orig_row.get('sport'),
+                            'market_id': orig_row.get('market_id'),
+                            'runner_name': orig_row.get('runner_name'),
+                            'price_pinnacle': None,
+                            'last_updated': datetime.now(timezone.utc).isoformat()
+                        }
+                    stale_cleared += 1
+            if stale_cleared:
+                logger.info(f"🧹 Cleared {stale_cleared} stale PIN prices")
         except Exception as e:
             logger.error(f"AsianOdds integration error: {e}")
     # ------------------------------------
