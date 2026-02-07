@@ -708,8 +708,8 @@ def fetch_betfair():
 
                     comp_name = market_info.competition.name if market_info.competition else "Unknown League"
 
-                    # Skip youth/reserve leagues (noise)
-                    if any(x in comp_name.upper() for x in ['U21', 'U23', 'U19', 'RESERVE', 'YOUTH']):
+                    # Skip youth/reserve/lower leagues (noise)
+                    if any(x in comp_name.upper() for x in ['U21', 'U23', 'U19', 'RESERVE', 'YOUTH', 'PREMIER LEAGUE 2', 'DIV 1', 'DIV 2']):
                         continue
 
                     for runner in book.runners:
