@@ -302,6 +302,7 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
     for sport_name, sport_id in ASIANODDS_SPORT_MAP.items():
         ao_has_pin = 0
         ao_skipped_no_pin = 0
+        ao_unmatched_samples = 0
         try:
             # Fetch Today and Early with separate TTLs
             all_matches = []
@@ -346,6 +347,11 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
                         away_obj = m.get('AwayTeam') or {}
                         h = home_obj.get('Name', '') if isinstance(home_obj, dict) else ''
                         a = away_obj.get('Name', '') if isinstance(away_obj, dict) else ''
+                        # Fallback to flat field names (same as matching code)
+                        if not h:
+                            h = m.get('HomeTeamName', '')
+                        if not a:
+                            a = m.get('AwayTeamName', '')
                         if h and a:
                             existing[f"{h}_{a}"] = m
 
@@ -405,6 +411,7 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
                         continue
 
                     ao_has_pin += 1
+                    ao_matched_this = False
 
                     # Find matching rows in our DB
                     for row in active_rows:
@@ -444,14 +451,21 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
                             updates[row_id] = {
                                 'price_pinnacle': pin_price
                             }
-
+                            ao_matched_this = True
                             logger.info(f"✓ PIN: {row['runner_name']} @ {pin_price}")
 
-            # Diagnostic: show PIN data availability and sample AO team names
+                    # Debug: log first 3 unmatched PIN entries per sport
+                    if not ao_matched_this and ao_unmatched_samples < 3:
+                        ao_unmatched_samples += 1
+                        sport_rows = [r for r in active_rows if r['sport'] == sport_name]
+                        sample_runners = [f"{r['norm_runner']}|{r['norm_event']}" for r in sport_rows[:3]]
+                        logger.info(f"  UNMATCHED PIN: AO={home_team} vs {away_team} | norm={norm_home} vs {norm_away}")
+                        logger.info(f"    DB samples: {sample_runners}")
+
+            # Diagnostic: show PIN data availability
             sport_rows = [r for r in active_rows if r['sport'] == sport_name]
             logger.info(f"AO {sport_name}: {ao_has_pin} with PIN, {ao_skipped_no_pin} without PIN, {len(sport_rows)} DB rows")
             if ao_has_pin == 0 and all_matches:
-                # Show sample match to debug market field
                 sample = all_matches[0]
                 h = (sample.get('HomeTeam') or {}).get('Name', '?')
                 a = (sample.get('AwayTeam') or {}).get('Name', '?')
