@@ -211,10 +211,18 @@ def normalize_af(name):
     name = name.replace(" st.", " state").replace(" st ", " state ")
     return re.sub(r'[^a-z0-9]', '', name)
 
+def strip_team_prefix(name):
+    """Strip common team prefixes for better matching."""
+    prefixes = ['afc', 'fc', 'as', 'us', 'cf', 'sc', 'ac', 'ssc', 'rcd', 'rc']
+    for prefix in prefixes:
+        if name.startswith(prefix) and len(name) > len(prefix) + 3:
+            return name[len(prefix):]
+    return name
+
 def check_match(name_a, name_b):
     if not name_a or not name_b: return False
     if name_a == name_b: return True
-    
+
     # Check explicit Alias Map first
     if name_a in ALIAS_MAP and name_b in ALIAS_MAP[name_a]: return True
     if name_b in ALIAS_MAP and name_a in ALIAS_MAP[name_b]: return True
@@ -223,7 +231,15 @@ def check_match(name_a, name_b):
     # only if the core string is significant (over 4 chars) to avoid false positives
     if len(name_a) > 4 and name_a in name_b: return True
     if len(name_b) > 4 and name_b in name_a: return True
-    
+
+    # Try again with prefixes stripped
+    stripped_a = strip_team_prefix(name_a)
+    stripped_b = strip_team_prefix(name_b)
+    if stripped_a != name_a or stripped_b != name_b:
+        if stripped_a == stripped_b: return True
+        if len(stripped_a) > 4 and stripped_a in stripped_b: return True
+        if len(stripped_b) > 4 and stripped_b in stripped_a: return True
+
     return False
 
 # --- IN-PLAY CHECK (MINIMAL QUERY) ---
@@ -303,21 +319,9 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
                 logger.info(f"AsianOdds: No feeds for {sport_name}")
                 continue
 
-            logger.info(f"AsianOdds: Got {len(feeds)} sport feeds for {sport_name}")
-
-            # Debug counters
-            matches_with_teams = 0
-            matches_with_odds = 0
-            matches_with_pin = 0
-
             # Parse through the nested structure
             for sport_feed in feeds:
                 match_games = sport_feed.get('MatchGames', []) or []
-
-                # Debug: log first match structure
-                if match_games:
-                    first = match_games[0]
-                    logger.info(f"AsianOdds {sport_name} sample: HomeTeam={first.get('HomeTeam')}, HomeTeamName={first.get('HomeTeamName')}")
 
                 for match in match_games:
                     if not match or not isinstance(match, dict):
@@ -338,7 +342,6 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
                     if not home_team or not away_team:
                         continue
 
-                    matches_with_teams += 1
                     norm_home = normalize(home_team)
                     norm_away = normalize(away_team)
 
@@ -349,24 +352,13 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
                         market_data = match.get('FullTimeOneXTwo') or {}
 
                     bookie_odds_str = market_data.get('BookieOdds', '')
-
                     if not bookie_odds_str:
                         continue
 
-                    matches_with_odds += 1
-
                     # Parse the bookie odds
                     parsed_odds = ao_client.parse_bookie_odds(bookie_odds_str)
-
-                    if not parsed_odds:
+                    if not parsed_odds or 'PIN' not in parsed_odds:
                         continue
-
-                    if 'PIN' in parsed_odds:
-                        matches_with_pin += 1
-                        # Log first PIN match attempt for debug
-                        if matches_with_pin == 1:
-                            db_runners = [r['norm_runner'] for r in active_rows if r['sport'] == sport_name][:5]
-                            logger.info(f"AsianOdds {sport_name} PIN match attempt: '{norm_home}' vs '{norm_away}' | DB samples: {db_runners}")
 
                     # Find matching rows in our DB
                     for row in active_rows:
@@ -407,25 +399,7 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
                                 'price_pinnacle': pin_price
                             }
 
-                            if DEBUG_MODE:
-                                logger.info(f"AsianOdds Match: {row['runner_name']} -> PIN @ {pin_price}")
-
-            # Log debug counts
-            logger.info(f"AsianOdds {sport_name}: teams={matches_with_teams}, odds={matches_with_odds}, PIN={matches_with_pin}")
-
-            # Debug: Check if any DB teams appear in AsianOdds feed at all
-            if sport_name == 'Soccer' and matches_with_teams > 0:
-                db_teams = set(r['norm_runner'] for r in active_rows if r['sport'] == sport_name and 'draw' not in r['norm_runner'].lower())
-                ao_teams = set()
-                for sf in feeds:
-                    for m in sf.get('MatchGames', []) or []:
-                        ht = (m.get('HomeTeam') or {}).get('Name', '')
-                        at = (m.get('AwayTeam') or {}).get('Name', '')
-                        if ht: ao_teams.add(normalize(ht))
-                        if at: ao_teams.add(normalize(at))
-                overlap = db_teams & ao_teams
-                if overlap:
-                    logger.info(f"AsianOdds {sport_name} OVERLAP with DB: {list(overlap)[:5]}")
+                            logger.info(f"✓ PIN: {row['runner_name']} @ {pin_price}")
 
         except Exception as e:
             logger.error(f"AsianOdds fetch error for {sport_name}: {e}")
