@@ -505,13 +505,32 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
             # Diagnostic: show PIN data availability
             sport_rows = [r for r in active_rows if r['sport'] == sport_name]
             logger.info(f"AO {sport_name}: {ao_has_pin} with PIN, {ao_skipped_no_pin} without PIN, {len(sport_rows)} DB rows")
-            if ao_has_pin == 0 and all_matches:
-                sample = all_matches[0]
-                h = (sample.get('HomeTeam') or {}).get('Name', '?')
-                a = (sample.get('AwayTeam') or {}).get('Name', '?')
-                ftml = bool(sample.get('FullTimeMoneyLine'))
-                ft1x2 = bool(sample.get('FullTimeOneXTwo'))
-                logger.info(f"  Sample: {h} vs {a} | ML={ftml} 1X2={ft1x2}")
+
+            # For Basketball: find NBA matches and show what market fields they have
+            if sport_name == 'Basketball' and all_matches:
+                nba_samples = []
+                for m in all_matches:
+                    league = (m.get('LeagueName') or '').upper()
+                    if 'NBA' in league:
+                        h = (m.get('HomeTeam') or {}).get('Name', '?')
+                        a = (m.get('AwayTeam') or {}).get('Name', '?')
+                        ml = m.get('FullTimeMoneyLine') or {}
+                        x2 = m.get('FullTimeOneXTwo') or {}
+                        hdp = m.get('FullTimeHandicap') or {}
+                        ou = m.get('FullTimeOverUnder') or {}
+                        ml_odds = (ml.get('BookieOdds') or '')[:60] if isinstance(ml, dict) else ''
+                        x2_odds = (x2.get('BookieOdds') or '')[:60] if isinstance(x2, dict) else ''
+                        hdp_odds = (hdp.get('BookieOdds') or '')[:60] if isinstance(hdp, dict) else ''
+                        ou_odds = (ou.get('BookieOdds') or '')[:60] if isinstance(ou, dict) else ''
+                        nba_samples.append(f"{h} vs {a} | ML={ml_odds or 'N/A'} 1X2={x2_odds or 'N/A'} HDP={hdp_odds or 'N/A'} OU={ou_odds or 'N/A'}")
+                        if len(nba_samples) >= 2:
+                            break
+                if nba_samples:
+                    logger.info(f"  NBA matches found: {len([m for m in all_matches if 'NBA' in (m.get('LeagueName') or '').upper()])}")
+                    for s in nba_samples:
+                        logger.info(f"    {s}")
+                else:
+                    logger.info(f"  No NBA matches in {len(all_matches)} cached basketball matches")
 
         except Exception as e:
             logger.error(f"AsianOdds fetch error for {sport_name}: {e}")
