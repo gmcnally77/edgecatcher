@@ -300,6 +300,8 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
     now = time.time()
 
     for sport_name, sport_id in ASIANODDS_SPORT_MAP.items():
+        ao_has_pin = 0
+        ao_skipped_no_pin = 0
         try:
             # Fetch Today and Early with separate TTLs
             all_matches = []
@@ -382,7 +384,10 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
                     # Parse the bookie odds
                     parsed_odds = ao_client.parse_bookie_odds(bookie_odds_str)
                     if not parsed_odds or 'PIN' not in parsed_odds:
+                        ao_skipped_no_pin += 1
                         continue
+
+                    ao_has_pin += 1
 
                     # Find matching rows in our DB
                     for row in active_rows:
@@ -424,6 +429,18 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
                             }
 
                             logger.info(f"✓ PIN: {row['runner_name']} @ {pin_price}")
+
+            # Diagnostic: show PIN data availability and sample AO team names
+            sport_rows = [r for r in active_rows if r['sport'] == sport_name]
+            logger.info(f"AO {sport_name}: {ao_has_pin} with PIN, {ao_skipped_no_pin} without PIN, {len(sport_rows)} DB rows")
+            if ao_has_pin == 0 and all_matches:
+                # Show sample match to debug market field
+                sample = all_matches[0]
+                h = (sample.get('HomeTeam') or {}).get('Name', '?')
+                a = (sample.get('AwayTeam') or {}).get('Name', '?')
+                ftml = bool(sample.get('FullTimeMoneyLine'))
+                ft1x2 = bool(sample.get('FullTimeOneXTwo'))
+                logger.info(f"  Sample: {h} vs {a} | ML={ftml} 1X2={ft1x2}")
 
         except Exception as e:
             logger.error(f"AsianOdds fetch error for {sport_name}: {e}")
