@@ -308,6 +308,7 @@ def has_inplay_markets():
 # --- ASIANODDS INTEGRATION ---
 # Cache for AsianOdds - exact rate limits:
 # Live=5s, Today=10s, Early=20s
+ASIANODDS_TTL_LIVE = 5     # Exact limit
 ASIANODDS_TTL_TODAY = 10   # Exact limit
 ASIANODDS_TTL_EARLY = 20   # Exact limit
 ASIANODDS_CACHE_FILE = os.path.join(CACHE_DIR, "asianodds_cache.json")
@@ -361,10 +362,13 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
         ao_skipped_no_pin = 0
         ao_unmatched_samples = 0
         try:
-            # Fetch Today and Early with separate TTLs
+            # Fetch Live, Today, and Early with separate TTLs
+            # NBA only appears in Live market (market_type=1) — not in Today/Early
+            # EPL matches near kickoff also move to Live before they start
             all_matches = []
 
-            for market_type, ttl in [(2, ASIANODDS_TTL_TODAY), (3, ASIANODDS_TTL_EARLY)]:
+            market_types = [(1, ASIANODDS_TTL_LIVE), (2, ASIANODDS_TTL_TODAY), (3, ASIANODDS_TTL_EARLY)]
+            for market_type, ttl in market_types:
                 cache_key = f"{sport_id}_{market_type}"
                 cache_age = now - _asianodds_cache_time.get(cache_key, 0)
 
@@ -418,7 +422,7 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
                     _save_ao_cache(_asianodds_cache)  # persist to disk
                     all_matches.extend(existing.values())
 
-                    mtype_name = "Today" if market_type == 2 else "Early"
+                    mtype_name = {1: "Live", 2: "Today", 3: "Early"}.get(market_type, str(market_type))
                     logger.info(f"AsianOdds {sport_name} {mtype_name}: {len(filtered)} fresh, {len(existing)} total cached")
 
             feeds = [{'MatchGames': all_matches}] if all_matches else []
@@ -453,13 +457,16 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
                     norm_home = normalize(home_team)
                     norm_away = normalize(away_team)
 
-                    # Get odds - try sport-specific field first, then fallback
-                    if sport_name == 'Basketball':
-                        market_data = match.get('FullTimeMoneyLine') or match.get('FullTimeOneXTwo') or {}
-                    else:
-                        market_data = match.get('FullTimeOneXTwo') or match.get('FullTimeMoneyLine') or {}
-
-                    bookie_odds_str = market_data.get('BookieOdds', '')
+                    # Get odds - try multiple fields, use whichever has BookieOdds
+                    # NBA Live market has odds in FullTimeOneXTwo (not MoneyLine)
+                    bookie_odds_str = ''
+                    for field in (['FullTimeMoneyLine', 'FullTimeOneXTwo'] if sport_name == 'Basketball'
+                                  else ['FullTimeOneXTwo', 'FullTimeMoneyLine']):
+                        md = match.get(field) or {}
+                        odds = md.get('BookieOdds', '') if isinstance(md, dict) else ''
+                        if odds:
+                            bookie_odds_str = odds
+                            break
                     if not bookie_odds_str:
                         continue
 
