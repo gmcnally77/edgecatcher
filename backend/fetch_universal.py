@@ -762,6 +762,9 @@ def run_spy():
                     }
             if asian_prices:
                 logger.info(f"🇸🇬 AsianOdds: Applied {len(asian_prices)} sharp prices")
+                for rid, ap in asian_prices.items():
+                    final_pin = updates.get(rid, {}).get('price_pinnacle')
+                    logger.info(f"  DB_WRITE row={rid}: pin={final_pin} (asian={ap.get('price_pinnacle')})")
         except Exception as e:
             logger.error(f"AsianOdds integration error: {e}")
     # ------------------------------------
