@@ -286,10 +286,35 @@ def has_inplay_markets():
 # --- ASIANODDS INTEGRATION ---
 # Cache for AsianOdds - exact rate limits:
 # Live=5s, Today=10s, Early=20s
-_asianodds_cache = {}
-_asianodds_cache_time = {}
 ASIANODDS_TTL_TODAY = 10   # Exact limit
 ASIANODDS_TTL_EARLY = 20   # Exact limit
+ASIANODDS_CACHE_FILE = os.path.join(CACHE_DIR, "asianodds_cache.json")
+
+def _load_ao_cache():
+    """Load persistent AO cache from disk (survives restarts)."""
+    try:
+        if os.path.exists(ASIANODDS_CACHE_FILE):
+            file_age = time.time() - os.path.getmtime(ASIANODDS_CACHE_FILE)
+            if file_age < 3600:  # discard if older than 1 hour
+                with open(ASIANODDS_CACHE_FILE, 'r') as f:
+                    data = json.load(f)
+                total = sum(len(v) for v in data.values() if isinstance(v, dict))
+                logger.info(f"Loaded AO cache from disk: {total} matches across {len(data)} keys")
+                return data
+    except Exception as e:
+        logger.warning(f"Could not load AO cache: {e}")
+    return {}
+
+def _save_ao_cache(cache):
+    """Persist AO cache to disk."""
+    try:
+        with open(ASIANODDS_CACHE_FILE, 'w') as f:
+            json.dump(cache, f)
+    except Exception as e:
+        logger.warning(f"Could not save AO cache: {e}")
+
+_asianodds_cache = _load_ao_cache()
+_asianodds_cache_time = {}
 
 def fetch_asianodds_prices(active_rows, id_to_row_map):
     """
@@ -375,6 +400,7 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
 
                     _asianodds_cache[cache_key] = existing
                     _asianodds_cache_time[cache_key] = time.time()
+                    _save_ao_cache(_asianodds_cache)  # persist to disk
                     all_matches.extend(existing.values())
 
                     mtype_name = "Today" if market_type == 2 else "Early"
