@@ -342,8 +342,11 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
                     norm_home = normalize(home_team)
                     norm_away = normalize(away_team)
 
-                    # Get 1X2 odds (used by both Soccer and MMA)
-                    market_data = match.get('FullTimeOneXTwo') or {}
+                    # Get odds - Soccer/MMA use 1X2, Basketball uses MoneyLine
+                    if sport_name == 'Basketball':
+                        market_data = match.get('FullTimeMoneyLine') or {}
+                    else:
+                        market_data = match.get('FullTimeOneXTwo') or {}
 
                     bookie_odds_str = market_data.get('BookieOdds', '')
 
@@ -360,6 +363,10 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
 
                     if 'PIN' in parsed_odds:
                         matches_with_pin += 1
+                        # Log first PIN match attempt for debug
+                        if matches_with_pin == 1:
+                            db_runners = [r['norm_runner'] for r in active_rows if r['sport'] == sport_name][:5]
+                            logger.info(f"AsianOdds {sport_name} PIN match attempt: '{norm_home}' vs '{norm_away}' | DB samples: {db_runners}")
 
                     # Find matching rows in our DB
                     for row in active_rows:
