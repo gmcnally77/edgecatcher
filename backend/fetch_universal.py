@@ -726,9 +726,8 @@ def run_spy():
                             return o.get('price')
                     return None
 
-                p = find_price(get_h2h(pin_book), raw_name)
-                if p is not None:
-                    updates[row_id]['price_pinnacle'] = p
+                # PIN price now sourced exclusively from AsianOdds (live feed)
+                # The Odds API Pinnacle is stale/delayed — do not write it
 
                 price_ladbrokes = find_price(get_h2h(ladbrokes_book), raw_name)
                 if price_ladbrokes is not None:
