@@ -167,12 +167,12 @@ export default function Home() {
 
   const SCOPE_MODE = process.env.NEXT_PUBLIC_SCOPE_MODE || "";
 
-  const visibleSports = SCOPE_MODE.startsWith("NBA_PREMATCH_ML") 
-    ? SPORTS.filter(s => s.id === 'Basketball' || s.id === 'MMA') 
+  const visibleSports = SCOPE_MODE.startsWith("NBA_PREMATCH_ML")
+    ? SPORTS.filter(s => s.id === 'Basketball' || s.id === 'MMA' || s.id === 'Soccer')
     : SPORTS;
 
   useEffect(() => {
-    if (SCOPE_MODE.startsWith("NBA_PREMATCH_ML") && activeSport !== 'Basketball' && activeSport !== 'MMA') {
+    if (SCOPE_MODE.startsWith("NBA_PREMATCH_ML") && activeSport !== 'Basketball' && activeSport !== 'MMA' && activeSport !== 'Soccer') {
       setActiveSport('Basketball');
     }
   }, []);
