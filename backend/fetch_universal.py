@@ -415,7 +415,18 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
                         if h and a:
                             # Include league to avoid collisions (EPL vs U21/reserves)
                             league = m.get('LeagueName', '')
-                            existing[f"{h}_{a}_{league}"] = m
+                            cache_entry_key = f"{h}_{a}_{league}"
+                            # Live feed returns multiple entries per game (1X2, handicap, O/U).
+                            # Only overwrite if new entry has odds — don't clobber a good entry
+                            # with an empty one.
+                            has_odds = False
+                            for odds_field in ['FullTimeOneXTwo', 'FullTimeMoneyLine']:
+                                od = m.get(odds_field) or {}
+                                if isinstance(od, dict) and od.get('BookieOdds'):
+                                    has_odds = True
+                                    break
+                            if has_odds or cache_entry_key not in existing:
+                                existing[cache_entry_key] = m
 
                     _asianodds_cache[cache_key] = existing
                     _asianodds_cache_time[cache_key] = time.time()
