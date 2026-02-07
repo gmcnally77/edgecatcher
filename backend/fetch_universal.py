@@ -412,8 +412,8 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
                         if not runner_match:
                             continue
 
-                        # Event name should contain at least one team (alias-aware)
-                        event_match = (team_in_event(norm_home, row['norm_event']) or team_in_event(norm_away, row['norm_event']))
+                        # Event must contain BOTH teams to prevent cross-match contamination
+                        event_match = (team_in_event(norm_home, row['norm_event']) and team_in_event(norm_away, row['norm_event']))
 
                         if not event_match:
                             continue
