@@ -27,6 +27,18 @@ logger = logging.getLogger(__name__)
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("httpcore").setLevel(logging.WARNING)
 
+# --- ASIANODDS CLIENT IMPORT ---
+ASIANODDS_ENABLED = False
+get_asianodds_client = None
+try:
+    from asianodds_client import get_client as get_asianodds_client
+    ASIANODDS_ENABLED = True
+    logger.info("🇸🇬 AsianOdds client loaded")
+except ImportError as e:
+    logger.warning(f"AsianOdds client not available: {e}")
+except Exception as e:
+    logger.warning(f"AsianOdds client error: {e}")
+
 # --- IMPORT CONFIG ---
 try:
     from sports_config import SPORTS_CONFIG, ALIAS_MAP, SCOPE_MODE
@@ -57,6 +69,15 @@ CACHE_DIR = "api_cache"
 
 if not os.path.exists(CACHE_DIR):
     os.makedirs(CACHE_DIR)
+
+# --- ASIANODDS SPORT MAPPING ---
+# Maps our sport names to AsianOdds sport type IDs
+# From GetSports: 1=Football, 2=Basketball, 3=Tennis, 5=AmFootball, 9=MMA
+ASIANODDS_SPORT_MAP = {
+    'Soccer': 1,        # Football/Soccer - has 1X2 odds
+    'Basketball': 2,    # Basketball - has 1X2 moneyline (FullTimeOneXTwo)
+    'MMA': 9,           # MMA - has 1X2 odds (moneyline)
+}
 
 # --- TRACKING & QUOTA (20K/MO PLAN) ---
 CALLS_TODAY = 0
@@ -218,6 +239,147 @@ def has_inplay_markets():
     except Exception as e:
         logger.error(f"DB Error checking in-play: {e}")
         return False
+
+# --- ASIANODDS INTEGRATION ---
+# Cache for AsianOdds - exact rate limits:
+# Live=5s, Today=10s, Early=20s
+_asianodds_cache = {}
+_asianodds_cache_time = {}
+ASIANODDS_TTL_TODAY = 10   # Exact limit
+ASIANODDS_TTL_EARLY = 20   # Exact limit
+
+def fetch_asianodds_prices(active_rows, id_to_row_map):
+    """
+    Fetch sharp Asian prices and match to our active markets.
+    Returns dict: {row_id: {'price_pinnacle': pin_price}}
+    """
+    global _asianodds_cache, _asianodds_cache_time
+
+    if not ASIANODDS_ENABLED:
+        return {}
+
+    ao_client = get_asianodds_client()
+    if not ao_client:
+        logger.warning("AsianOdds client not configured - skipping")
+        return {}
+
+    updates = {}
+    now = time.time()
+
+    for sport_name, sport_id in ASIANODDS_SPORT_MAP.items():
+        try:
+            # Fetch Today and Early with separate TTLs
+            all_matches = []
+
+            for market_type, ttl in [(1, ASIANODDS_TTL_TODAY), (2, ASIANODDS_TTL_EARLY)]:
+                cache_key = f"{sport_id}_{market_type}"
+                cache_age = now - _asianodds_cache_time.get(cache_key, 0)
+
+                if cache_key in _asianodds_cache and cache_age < ttl:
+                    # Use cached data
+                    all_matches.extend(_asianodds_cache[cache_key])
+                else:
+                    # Fetch fresh
+                    feed_data = ao_client.get_feeds(sport_id, market_type_id=market_type, odds_format="00")
+                    matches = []
+                    if feed_data:
+                        for sf in feed_data:
+                            matches.extend(sf.get('MatchGames', []))
+
+                    _asianodds_cache[cache_key] = matches
+                    _asianodds_cache_time[cache_key] = now
+                    all_matches.extend(matches)
+
+                    mtype_name = "Today" if market_type == 1 else "Early"
+                    logger.info(f"AsianOdds {sport_name} {mtype_name}: {len(matches)} matches")
+
+            feeds = [{'MatchGames': all_matches}] if all_matches else []
+
+            if not feeds:
+                logger.info(f"AsianOdds: No feeds for {sport_name}")
+                continue
+
+            logger.info(f"AsianOdds: Got {len(feeds)} sport feeds for {sport_name}")
+
+            # Parse through the nested structure
+            for sport_feed in feeds:
+                match_games = sport_feed.get('MatchGames', [])
+
+                for match in match_games:
+                    # Team names are nested: HomeTeam.Name, AwayTeam.Name
+                    home_team = match.get('HomeTeam', {}).get('Name', '')
+                    away_team = match.get('AwayTeam', {}).get('Name', '')
+
+                    if not home_team or not away_team:
+                        continue
+
+                    norm_home = normalize(home_team)
+                    norm_away = normalize(away_team)
+
+                    # Get 1X2 odds (used by both Soccer and MMA)
+                    market_data = match.get('FullTimeOneXTwo', {})
+
+                    bookie_odds_str = market_data.get('BookieOdds', '')
+
+                    if not bookie_odds_str:
+                        continue
+
+                    # Parse the bookie odds
+                    parsed_odds = ao_client.parse_bookie_odds(bookie_odds_str)
+
+                    if not parsed_odds:
+                        continue
+
+                    # Find matching rows in our DB
+                    for row in active_rows:
+                        if row['sport'] != sport_name:
+                            continue
+
+                        # Match by team names (home or away)
+                        runner_match = False
+                        side = None
+
+                        if check_match(norm_home, row['norm_runner']):
+                            runner_match = True
+                            side = 'home'
+                        elif check_match(norm_away, row['norm_runner']):
+                            runner_match = True
+                            side = 'away'
+                        elif sport_name == 'Soccer' and 'draw' in row['norm_runner'].lower():
+                            # Only soccer has draws
+                            runner_match = True
+                            side = 'draw'
+
+                        if not runner_match:
+                            continue
+
+                        # Event name should contain both teams
+                        event_match = (norm_home in row['norm_event'] or norm_away in row['norm_event'])
+
+                        if not event_match:
+                            continue
+
+                        # Get Pinnacle price only (not best across all bookies)
+                        pin_odds = parsed_odds.get('PIN', {})
+                        pin_price = pin_odds.get(side, 0)
+
+                        if pin_price and pin_price > 1.01:
+                            row_id = row['id']
+                            updates[row_id] = {
+                                'price_pinnacle': pin_price
+                            }
+
+                            if DEBUG_MODE:
+                                logger.info(f"AsianOdds Match: {row['runner_name']} -> PIN @ {pin_price}")
+
+        except Exception as e:
+            logger.error(f"AsianOdds fetch error for {sport_name}: {e}")
+
+    if updates:
+        logger.info(f"🎯 AsianOdds: Matched {len(updates)} prices")
+
+    return updates
+
 
 # --- MAIN ENGINE ---
 def run_spy():
@@ -539,6 +701,32 @@ def run_spy():
                     updates[row_id]['price_paddy'] = p
 
     tracker.report()
+
+    # --- ASIANODDS SHARP PRICE OVERLAY ---
+    # Fetch Asian prices and merge into updates (overrides Pinnacle)
+    if ASIANODDS_ENABLED:
+        try:
+            asian_prices = fetch_asianodds_prices(active_rows, id_to_row_map)
+            for row_id, prices in asian_prices.items():
+                if row_id in updates:
+                    # Override Pinnacle with Asian price
+                    updates[row_id]['price_pinnacle'] = prices['price_pinnacle']
+                else:
+                    # Create new update entry for this row
+                    orig_row = id_to_row_map.get(row_id, {})
+                    updates[row_id] = {
+                        'id': row_id,
+                        'sport': orig_row.get('sport'),
+                        'market_id': orig_row.get('market_id'),
+                        'runner_name': orig_row.get('runner_name'),
+                        'price_pinnacle': prices['price_pinnacle'],
+                        'last_updated': datetime.now(timezone.utc).isoformat()
+                    }
+            if asian_prices:
+                logger.info(f"🇸🇬 AsianOdds: Applied {len(asian_prices)} sharp prices")
+        except Exception as e:
+            logger.error(f"AsianOdds integration error: {e}")
+    # ------------------------------------
 
     if updates:
         logger.info(f"Spy: Updating {len(updates)} rows...")
