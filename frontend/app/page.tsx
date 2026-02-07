@@ -84,9 +84,36 @@ const groupData = (data: any[]) => {
           return (a.name || '').localeCompare(b.name || '');
       });
       
-      // Sort Selections A-Z (with null safety)
+      // Sort Selections: Soccer = Home, Draw, Away; Others = A-Z
       competitions[key].forEach(market => {
-          market.selections.sort((a: any, b: any) => (a.name || '').localeCompare(b.name || ''));
+          // Check if this is a soccer match (has "The Draw" selection)
+          const hasDraw = market.selections.some((s: any) =>
+              (s.name || '').toLowerCase().includes('draw')
+          );
+
+          if (hasDraw && market.name) {
+              // Parse home/away from event name (format: "Home v Away" or "Home vs Away")
+              const parts = market.name.split(/ v | vs /i);
+              const homeTeam = parts[0]?.trim().toLowerCase() || '';
+              const awayTeam = parts[1]?.trim().toLowerCase() || '';
+
+              market.selections.sort((a: any, b: any) => {
+                  const nameA = (a.name || '').toLowerCase();
+                  const nameB = (b.name || '').toLowerCase();
+
+                  // Priority: Home (0) -> Draw (1) -> Away (2)
+                  const getPriority = (name: string) => {
+                      if (name.includes('draw')) return 1;
+                      if (homeTeam && name.includes(homeTeam.substring(0, 6))) return 0;
+                      return 2; // Away
+                  };
+
+                  return getPriority(nameA) - getPriority(nameB);
+              });
+          } else {
+              // Default A-Z sort for non-soccer
+              market.selections.sort((a: any, b: any) => (a.name || '').localeCompare(b.name || ''));
+          }
       });
   });
 
