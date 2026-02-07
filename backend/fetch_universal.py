@@ -242,6 +242,23 @@ def check_match(name_a, name_b):
 
     return False
 
+def team_in_event(team_norm, event_norm):
+    """Check if a team name (or any known alias) appears in the event string."""
+    if team_norm in event_norm:
+        return True
+    # Collect all aliases for this team
+    aliases = set()
+    if team_norm in ALIAS_MAP:
+        aliases.update(ALIAS_MAP[team_norm])
+    for key, vals in ALIAS_MAP.items():
+        if team_norm in vals:
+            aliases.add(key)
+            aliases.update(vals)
+    for alias in aliases:
+        if len(alias) > 4 and alias in event_norm:
+            return True
+    return False
+
 # --- IN-PLAY CHECK (MINIMAL QUERY) ---
 def has_inplay_markets():
     try:
@@ -352,11 +369,11 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
                     norm_home = normalize(home_team)
                     norm_away = normalize(away_team)
 
-                    # Get odds - Soccer/MMA use 1X2, Basketball uses MoneyLine
+                    # Get odds - try sport-specific field first, then fallback
                     if sport_name == 'Basketball':
-                        market_data = match.get('FullTimeMoneyLine') or {}
+                        market_data = match.get('FullTimeMoneyLine') or match.get('FullTimeOneXTwo') or {}
                     else:
-                        market_data = match.get('FullTimeOneXTwo') or {}
+                        market_data = match.get('FullTimeOneXTwo') or match.get('FullTimeMoneyLine') or {}
 
                     bookie_odds_str = market_data.get('BookieOdds', '')
                     if not bookie_odds_str:
@@ -390,8 +407,8 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
                         if not runner_match:
                             continue
 
-                        # Event name should contain both teams
-                        event_match = (norm_home in row['norm_event'] or norm_away in row['norm_event'])
+                        # Event name should contain at least one team (alias-aware)
+                        event_match = (team_in_event(norm_home, row['norm_event']) or team_in_event(norm_away, row['norm_event']))
 
                         if not event_match:
                             continue
@@ -411,8 +428,14 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
         except Exception as e:
             logger.error(f"AsianOdds fetch error for {sport_name}: {e}")
 
+    # Per-sport breakdown
+    sport_counts = {}
+    for rid, u in updates.items():
+        orig = id_to_row_map.get(rid, {})
+        s = orig.get('sport', 'Unknown')
+        sport_counts[s] = sport_counts.get(s, 0) + 1
     if updates:
-        logger.info(f"🎯 AsianOdds: Matched {len(updates)} prices")
+        logger.info(f"🎯 AsianOdds: Matched {len(updates)} prices {sport_counts}")
     else:
         logger.info(f"AsianOdds: No prices matched to DB rows")
 
