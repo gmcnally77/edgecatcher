@@ -898,7 +898,7 @@ def run_spy():
 
                     if strict_mode:
                         # Fuzzy Event Match (Home or Away team check)
-                        event_match = (api_home in row['norm_event'] or api_away in row['norm_event'])
+                        event_match = (team_in_event(api_home, row['norm_event']) or team_in_event(api_away, row['norm_event']))
                         if runner_match and event_match:
                             is_match = True
                     else:
