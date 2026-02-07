@@ -66,7 +66,8 @@ ALIAS_MAP = {
     "diegolopez": ["diegolopes"],
     "dommarfan": ["dominicmarfan", "dommarfan"], 
     "sangwookkim": ["kimsangwook", "sangkim", "sang-wookkim"],
-    "klaudiasygula": ["ksygula", "klaudia sygula", "sygula"],
+    "klaudiasygula": ["ksygula", "klaudiasygua", "sygula"],
+    "klaudiasygua": ["klaudiasygula"],
     "ksygula": ["klaudiasygula"],
 
     # NFL (Standardized to handle market vs. full names)
