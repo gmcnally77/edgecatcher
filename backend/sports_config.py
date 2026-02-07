@@ -149,6 +149,25 @@ ALIAS_MAP = {
     "gswarriors": ["goldenstatewarriors", "goldenstate"],
     "sanantonio": ["sanantoniospurs", "spurs"],
     "sanantoniospurs": ["sanantonio"],
+
+    # --- EPL (English Premier League) ---
+    "manchesterunited": ["manutd", "manunited", "manu"],
+    "manutd": ["manchesterunited"],
+    "manunited": ["manchesterunited"],
+    "manchestercity": ["mancity", "mcfc"],
+    "mancity": ["manchestercity"],
+    "tottenhamhotspur": ["tottenham", "spursfc", "thfc"],
+    "tottenham": ["tottenhamhotspur"],
+    "newcastleunited": ["newcastle", "nufc"],
+    "newcastle": ["newcastleunited"],
+    "westhamunited": ["westham", "whu"],
+    "westham": ["westhamunited"],
+    "wolverhamptonwanderers": ["wolves", "wolverhampton", "wwfc"],
+    "wolves": ["wolverhamptonwanderers"],
+    "wolverhampton": ["wolverhamptonwanderers"],
+    "nottinghamforest": ["nottmforest", "nottsforest", "nffc", "forest"],
+    "nottmforest": ["nottinghamforest"],
+    "forest": ["nottinghamforest"],
 }
 
 # --- SCOPE GUARD (NEW) ---
