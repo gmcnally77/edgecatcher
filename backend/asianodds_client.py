@@ -73,11 +73,12 @@ class AsianOddsClient:
         data = self._request("GET", "Login", params, use_service_url=False)
 
         if not data or data.get("Code") != 0:
-            error_msg = data.get("Result", {}).get("TextMessage") if data else "No response"
+            result = (data.get("Result") or {}) if data else {}
+            error_msg = result.get("TextMessage", "No response") if isinstance(result, dict) else "No response"
             logger.error(f"AsianOdds login failed: {error_msg}")
             return False
 
-        result = data.get("Result", {})
+        result = data.get("Result") or {}
         self.ao_token = result.get("Token")
         self.ao_key = result.get("Key")
         self.service_url = result.get("Url")
@@ -95,7 +96,8 @@ class AsianOddsClient:
         data = self._request("GET", "Register", params)
 
         if not data or data.get("Code") != 0:
-            error_msg = data.get("Result", {}).get("TextMessage") if data else "No response"
+            result = (data.get("Result") or {}) if data else {}
+            error_msg = result.get("TextMessage", "No response") if isinstance(result, dict) else "No response"
             logger.error(f"AsianOdds register failed: {error_msg}")
             return False
 
@@ -134,7 +136,8 @@ class AsianOddsClient:
         if not data or data.get("Code") != 0:
             return []
 
-        return data.get("Result", {}).get("Sports", [])
+        result = data.get("Result") or {}
+        return result.get("Sports", []) if isinstance(result, dict) else []
 
     def get_leagues(self, sport_id):
         """Get leagues for a sport."""
@@ -146,7 +149,8 @@ class AsianOddsClient:
         if not data or data.get("Code") != 0:
             return []
 
-        return data.get("Result", {}).get("Leagues", [])
+        result = data.get("Result") or {}
+        return result.get("Leagues", []) if isinstance(result, dict) else []
 
     def get_feeds(self, sport_id, market_type_id=1, odds_format="00"):
         """
@@ -174,11 +178,13 @@ class AsianOddsClient:
             logger.warning("GetFeeds failed: No response")
             return []
         if data.get("Code") != 0:
-            error_msg = data.get("Result", {}).get("TextMessage", "Unknown error")
+            result = data.get("Result") or {}
+            error_msg = result.get("TextMessage", "Unknown error") if isinstance(result, dict) else "Unknown error"
             logger.warning(f"GetFeeds failed: {error_msg}")
             return []
 
-        return data.get("Result", {}).get("Sports", [])
+        result = data.get("Result") or {}
+        return result.get("Sports", []) if isinstance(result, dict) else []
 
     def get_matches(self, sport_id, market_type_id=2):
         """
@@ -200,7 +206,8 @@ class AsianOddsClient:
         if not data or data.get("Code") != 0:
             return []
 
-        return data.get("Result", {}).get("Matches", [])
+        result = data.get("Result") or {}
+        return result.get("Matches", []) if isinstance(result, dict) else []
 
     def parse_bookie_odds(self, odds_string):
         """
