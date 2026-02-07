@@ -276,8 +276,9 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
                 cache_age = now - _asianodds_cache_time.get(cache_key, 0)
 
                 if cache_key in _asianodds_cache and cache_age < ttl:
-                    # Use cached data
-                    all_matches.extend(_asianodds_cache[cache_key])
+                    # Use cached data - filter out any None values
+                    cached = _asianodds_cache[cache_key] or []
+                    all_matches.extend([m for m in cached if m and isinstance(m, dict)])
                 else:
                     # Fetch fresh
                     feed_data = ao_client.get_feeds(sport_id, market_type_id=market_type, odds_format="00")
@@ -287,7 +288,8 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
                             if sf and isinstance(sf, dict):
                                 matches.extend(sf.get('MatchGames', []) or [])
 
-                    _asianodds_cache[cache_key] = matches
+                    # Filter out any None values before caching
+                    _asianodds_cache[cache_key] = [m for m in matches if m and isinstance(m, dict)]
                     _asianodds_cache_time[cache_key] = now
                     all_matches.extend(matches)
 
@@ -304,7 +306,7 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
 
             # Parse through the nested structure
             for sport_feed in feeds:
-                match_games = sport_feed.get('MatchGames', [])
+                match_games = sport_feed.get('MatchGames', []) or []
 
                 for match in match_games:
                     if not match or not isinstance(match, dict):
