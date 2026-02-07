@@ -541,6 +541,31 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
             sport_rows = [r for r in active_rows if r['sport'] == sport_name]
             logger.info(f"AO {sport_name}: {ao_has_pin} with PIN, {ao_skipped_no_pin} without PIN, {len(sport_rows)} DB rows")
 
+            # For Soccer: count EPL matches in cache and show which have PIN
+            if sport_name == 'Soccer' and all_matches:
+                epl_total = 0
+                epl_with_pin = 0
+                epl_without_pin_samples = []
+                ao_client_ref = get_asianodds_client()
+                for m in all_matches:
+                    league = (m.get('LeagueName') or '').upper()
+                    if 'ENGLISH PREMIER' in league and 'U21' not in league and 'U23' not in league:
+                        epl_total += 1
+                        odds_str = (m.get('FullTimeOneXTwo') or {}).get('BookieOdds', '')
+                        parsed = ao_client_ref.parse_bookie_odds(odds_str) if ao_client_ref and odds_str else {}
+                        has_pin = 'PIN' in parsed or 'SIN' in parsed
+                        if has_pin:
+                            epl_with_pin += 1
+                        elif len(epl_without_pin_samples) < 3:
+                            h = ((m.get('HomeTeam') or {}).get('Name', '') or m.get('HomeTeamName', '')).lower()
+                            a = ((m.get('AwayTeam') or {}).get('Name', '') or m.get('AwayTeamName', '')).lower()
+                            bookies = list(parsed.keys())[:5] if parsed else ['(no odds)']
+                            epl_without_pin_samples.append(f"{h} vs {a} bookies={bookies}")
+                logger.info(f"  EPL in cache: {epl_total} total, {epl_with_pin} with PIN/SIN")
+                if epl_without_pin_samples:
+                    for s in epl_without_pin_samples:
+                        logger.info(f"    EPL no PIN: {s}")
+
             # For Basketball: show unique leagues and find NBA-like matches
             if sport_name == 'Basketball' and all_matches:
                 leagues = {}
