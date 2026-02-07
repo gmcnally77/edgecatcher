@@ -296,8 +296,15 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
                     cached = _asianodds_cache[cache_key] or []
                     all_matches.extend([m for m in cached if m and isinstance(m, dict)])
                 else:
-                    # Fetch fresh
+                    # Fetch fresh — delay between calls to avoid Code -810 rate limit
+                    last_fetch = getattr(fetch_asianodds_prices, '_last_fetch_time', 0)
+                    elapsed = time.time() - last_fetch
+                    if elapsed < ttl and last_fetch > 0:
+                        time.sleep(ttl - elapsed)
+
                     feed_data = ao_client.get_feeds(sport_id, market_type_id=market_type, odds_format="00")
+                    fetch_asianodds_prices._last_fetch_time = time.time()
+
                     matches = []
                     if feed_data and isinstance(feed_data, list):
                         for sf in feed_data:
@@ -307,7 +314,7 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
                     # Filter out any None values before caching
                     filtered = [m for m in matches if m and isinstance(m, dict)]
                     _asianodds_cache[cache_key] = filtered
-                    _asianodds_cache_time[cache_key] = now
+                    _asianodds_cache_time[cache_key] = time.time()
                     all_matches.extend(filtered)
 
                     mtype_name = "Today" if market_type == 2 else "Early"
