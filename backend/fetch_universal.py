@@ -282,9 +282,10 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
                     # Fetch fresh
                     feed_data = ao_client.get_feeds(sport_id, market_type_id=market_type, odds_format="00")
                     matches = []
-                    if feed_data:
+                    if feed_data and isinstance(feed_data, list):
                         for sf in feed_data:
-                            matches.extend(sf.get('MatchGames', []))
+                            if sf and isinstance(sf, dict):
+                                matches.extend(sf.get('MatchGames', []) or [])
 
                     _asianodds_cache[cache_key] = matches
                     _asianodds_cache_time[cache_key] = now
@@ -306,6 +307,9 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
                 match_games = sport_feed.get('MatchGames', [])
 
                 for match in match_games:
+                    if not match or not isinstance(match, dict):
+                        continue
+
                     # Team names are nested: HomeTeam.Name, AwayTeam.Name
                     home_team = match.get('HomeTeam', {}).get('Name', '')
                     away_team = match.get('AwayTeam', {}).get('Name', '')
