@@ -46,7 +46,7 @@ SPORTS_CONFIG = [
     {
         "name": "Soccer",
         "betfair_id": "1",
-        "text_query": "English Premier League",
+        "competition_id": "10932509",  # English Premier League (specific ID, no reserve leagues)
         "odds_api_key": "soccer_epl",
         "bookmakers": "pinnacle,williamhill,paddypower,ladbrokes_uk"
     },

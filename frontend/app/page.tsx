@@ -365,7 +365,7 @@ export default function Home() {
             // ============================================
             return (
                 <div className="space-y-8">
-                    {Object.entries(competitions).map(([compName, markets]) => {
+                    {Object.entries(competitions).sort((a, b) => a[0].localeCompare(b[0])).map(([compName, markets]) => {
                         const filtered = filterMarkets(markets);
                         if (filtered.length === 0) return null;
 
