@@ -254,7 +254,20 @@ class AsianOddsClient:
 
             try:
                 price_parts = prices_str.split(",")
-                if len(price_parts) >= 2:
+                if len(price_parts) >= 3 and price_parts[2]:
+                    # 3-way market (soccer 1X2): format is home,draw,away
+                    home_price = float(price_parts[0]) if price_parts[0] else 0
+                    draw_price = float(price_parts[1]) if price_parts[1] else 0
+                    away_price = float(price_parts[2]) if price_parts[2] else 0
+
+                    if home_price > 1.0 and away_price > 1.0:
+                        result[bookie] = {
+                            "home": home_price,
+                            "draw": draw_price,
+                            "away": away_price
+                        }
+                elif len(price_parts) >= 2:
+                    # 2-way market (basketball ML, MMA): format is home,away
                     home_price = float(price_parts[0]) if price_parts[0] else 0
                     away_price = float(price_parts[1]) if price_parts[1] else 0
 
@@ -263,9 +276,6 @@ class AsianOddsClient:
                             "home": home_price,
                             "away": away_price
                         }
-                        # Draw is optional (empty for MMA/Basketball)
-                        if len(price_parts) >= 3 and price_parts[2]:
-                            result[bookie]["draw"] = float(price_parts[2])
             except (ValueError, IndexError):
                 continue
 
