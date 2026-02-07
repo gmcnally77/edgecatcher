@@ -271,7 +271,7 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
             # Fetch Today and Early with separate TTLs
             all_matches = []
 
-            for market_type, ttl in [(1, ASIANODDS_TTL_TODAY), (2, ASIANODDS_TTL_EARLY)]:
+            for market_type, ttl in [(2, ASIANODDS_TTL_TODAY), (3, ASIANODDS_TTL_EARLY)]:
                 cache_key = f"{sport_id}_{market_type}"
                 cache_age = now - _asianodds_cache_time.get(cache_key, 0)
 
@@ -289,11 +289,12 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
                                 matches.extend(sf.get('MatchGames', []) or [])
 
                     # Filter out any None values before caching
-                    _asianodds_cache[cache_key] = [m for m in matches if m and isinstance(m, dict)]
+                    filtered = [m for m in matches if m and isinstance(m, dict)]
+                    _asianodds_cache[cache_key] = filtered
                     _asianodds_cache_time[cache_key] = now
-                    all_matches.extend(matches)
+                    all_matches.extend(filtered)
 
-                    mtype_name = "Today" if market_type == 1 else "Early"
+                    mtype_name = "Today" if market_type == 2 else "Early"
                     logger.info(f"AsianOdds {sport_name} {mtype_name}: {len(matches)} matches")
 
             feeds = [{'MatchGames': all_matches}] if all_matches else []
