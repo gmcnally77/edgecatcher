@@ -352,6 +352,8 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
                     if not isinstance(existing, dict):
                         existing = {}  # reset if old format
 
+                    skipped_no_name = 0
+                    sample_skipped = None
                     for m in filtered:
                         home_obj = m.get('HomeTeam') or {}
                         away_obj = m.get('AwayTeam') or {}
@@ -364,6 +366,12 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
                             a = m.get('AwayTeamName', '')
                         if h and a:
                             existing[f"{h}_{a}"] = m
+                        else:
+                            skipped_no_name += 1
+                            if not sample_skipped:
+                                sample_skipped = {k: str(v)[:80] for k, v in m.items() if k in ('HomeTeam', 'AwayTeam', 'HomeTeamName', 'AwayTeamName', 'GameId', 'LeagueName')}
+                    if skipped_no_name > 0:
+                        logger.info(f"  Cache: {skipped_no_name}/{len(filtered)} skipped (no team names). Sample: {sample_skipped}")
 
                     _asianodds_cache[cache_key] = existing
                     _asianodds_cache_time[cache_key] = time.time()
