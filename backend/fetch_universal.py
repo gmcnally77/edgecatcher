@@ -621,11 +621,12 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
                                 }
                                 ao_matched_this = True
                                 src = 'PIN' if 'PIN' in parsed_odds else 'SIN'
-                                logger.info(f"✓ {src}: {row['runner_name']} @ {pin_price} [{league}]")
+                                logger.info(f"✓ {src}: {row['runner_name']} @ {pin_price} [{league}] ({row.get('event_name', '')})")
                             else:
                                 logger.info(f"⊘ {row['runner_name']}: skipped {pin_price} from [{league}] (already matched)")
                         else:
-                            logger.debug(f"⚠ {row['runner_name']}: matched but side={side} price={pin_price} (odds={pin_odds})")
+                            league = match.get('LeagueName', '?')
+                            logger.info(f"⚠ {row['runner_name']}: side={side} price={pin_price} [{league}] AO={home_team} v {away_team} raw={bookie_odds_str[:80]}")
 
             # Summary line per sport
             sport_rows = [r for r in active_rows if r['sport'] == sport_name]
