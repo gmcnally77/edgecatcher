@@ -350,7 +350,8 @@ def run_ao_cycle():
 
     try:
         asian_prices = fetch_asianodds_prices(_cached_active_rows, _cached_id_to_row_map)
-        if not asian_prices:
+        if asian_prices is None:
+            # AO is unreachable — don't clear stale prices (could be temporary)
             return
 
         updates = {}
@@ -365,8 +366,11 @@ def run_ao_cycle():
                 'last_updated': datetime.now(timezone.utc).isoformat()
             }
 
-        # Clear stale PIN prices for rows that didn't match
+        # Clear stale PIN prices for rows that didn't match.
+        # This runs even when asian_prices is empty (AO is healthy but
+        # no matches found) — prevents stale prices from persisting.
         ao_matched_ids = set(asian_prices.keys())
+        stale_cleared = 0
         for row in _cached_active_rows:
             if row['sport'] not in ASIANODDS_SPORT_MAP:
                 continue
@@ -383,12 +387,16 @@ def run_ao_cycle():
                     'price_pinnacle': None,
                     'last_updated': datetime.now(timezone.utc).isoformat()
                 }
+                stale_cleared += 1
 
         if updates:
             data_list = list(updates.values())
             for i in range(0, len(data_list), 100):
                 supabase.table('market_feed').upsert(data_list[i:i+100], on_conflict='id').execute()
-            logger.info(f"🇸🇬 AO: {len(asian_prices)} PIN prices written")
+            msg = f"AO: {len(asian_prices)} PIN prices written"
+            if stale_cleared:
+                msg += f", {stale_cleared} stale cleared"
+            logger.info(msg)
     except Exception as e:
         logger.error(f"AO cycle error: {e}")
 
@@ -396,16 +404,17 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
     """
     Fetch sharp Asian prices and match to our active markets.
     Returns dict: {row_id: {'price_pinnacle': pin_price}}
+    Returns None if AO is unreachable (vs {} for healthy but no matches).
     """
     global _asianodds_cache, _asianodds_cache_time
 
     if not ASIANODDS_ENABLED:
-        return {}
+        return None
 
     ao_client = get_asianodds_client()
     if not ao_client:
         logger.warning("AsianOdds client not configured - skipping")
-        return {}
+        return None
 
     updates = {}
     now = time.time()
