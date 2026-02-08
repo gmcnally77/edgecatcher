@@ -338,7 +338,6 @@ def _save_ao_cache(cache):
 
 _asianodds_cache = _load_ao_cache()
 _asianodds_cache_time = {}
-_ao_first_fetch_keys = set()  # Track which cache keys have had their first fetch since startup
 
 # Cached row data for independent AO cycle
 _cached_active_rows = []
@@ -407,7 +406,7 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
     Returns dict: {row_id: {'price_pinnacle': pin_price}}
     Returns None if AO is unreachable (vs {} for healthy but no matches).
     """
-    global _asianodds_cache, _asianodds_cache_time, _ao_first_fetch_keys
+    global _asianodds_cache, _asianodds_cache_time
 
     if not ASIANODDS_ENABLED:
         return None
@@ -462,16 +461,12 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
                     # Filter out any None values
                     filtered = [m for m in matches if m and isinstance(m, dict)]
 
-                    # First API call after login = full snapshot → REPLACE cache.
-                    # Subsequent calls = incremental deltas → MERGE into cache.
-                    # This prevents stale entries from old disk cache persisting.
-                    if cache_key not in _ao_first_fetch_keys:
-                        existing = {}  # Fresh start — don't merge with old data
-                        _ao_first_fetch_keys.add(cache_key)
-                    else:
-                        existing = _asianodds_cache.get(cache_key, {})
-                        if not isinstance(existing, dict):
-                            existing = {}
+                    # MERGE into existing cache — API may return incremental
+                    # deltas even after restart if session persists. Merging
+                    # preserves matches not in the current response.
+                    existing = _asianodds_cache.get(cache_key, {})
+                    if not isinstance(existing, dict):
+                        existing = {}  # reset if old format
 
                     for m in filtered:
                         home_obj = m.get('HomeTeam') or {}
