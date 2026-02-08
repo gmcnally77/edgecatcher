@@ -339,6 +339,59 @@ def _save_ao_cache(cache):
 _asianodds_cache = _load_ao_cache()
 _asianodds_cache_time = {}
 
+# Cached row data for independent AO cycle
+_cached_active_rows = []
+_cached_id_to_row_map = {}
+
+def run_ao_cycle():
+    """Independent AO price cycle — runs on every main loop tick (~6s)."""
+    if not ASIANODDS_ENABLED or not _cached_active_rows:
+        return
+
+    try:
+        asian_prices = fetch_asianodds_prices(_cached_active_rows, _cached_id_to_row_map)
+        if not asian_prices:
+            return
+
+        updates = {}
+        for row_id, prices in asian_prices.items():
+            orig_row = _cached_id_to_row_map.get(row_id, {})
+            updates[row_id] = {
+                'id': row_id,
+                'sport': orig_row.get('sport'),
+                'market_id': orig_row.get('market_id'),
+                'runner_name': orig_row.get('runner_name'),
+                'price_pinnacle': prices['price_pinnacle'],
+                'last_updated': datetime.now(timezone.utc).isoformat()
+            }
+
+        # Clear stale PIN prices for rows that didn't match
+        ao_matched_ids = set(asian_prices.keys())
+        for row in _cached_active_rows:
+            if row['sport'] not in ASIANODDS_SPORT_MAP:
+                continue
+            row_id = row['id']
+            if row_id in ao_matched_ids:
+                continue
+            orig_row = _cached_id_to_row_map.get(row_id, {})
+            if orig_row.get('price_pinnacle') is not None:
+                updates[row_id] = {
+                    'id': row_id,
+                    'sport': orig_row.get('sport'),
+                    'market_id': orig_row.get('market_id'),
+                    'runner_name': orig_row.get('runner_name'),
+                    'price_pinnacle': None,
+                    'last_updated': datetime.now(timezone.utc).isoformat()
+                }
+
+        if updates:
+            data_list = list(updates.values())
+            for i in range(0, len(data_list), 100):
+                supabase.table('market_feed').upsert(data_list[i:i+100], on_conflict='id').execute()
+            logger.info(f"🇸🇬 AO: {len(asian_prices)} PIN prices written")
+    except Exception as e:
+        logger.error(f"AO cycle error: {e}")
+
 def fetch_asianodds_prices(active_rows, id_to_row_map):
     """
     Fetch sharp Asian prices and match to our active markets.
@@ -874,58 +927,11 @@ def run_spy():
 
     tracker.report()
 
-    # --- ASIANODDS SHARP PRICE OVERLAY ---
-    # Fetch Asian prices and merge into updates (overrides Pinnacle)
-    if ASIANODDS_ENABLED:
-        try:
-            asian_prices = fetch_asianodds_prices(active_rows, id_to_row_map)
-            for row_id, prices in asian_prices.items():
-                if row_id in updates:
-                    # Override Pinnacle with Asian price
-                    updates[row_id]['price_pinnacle'] = prices['price_pinnacle']
-                else:
-                    # Create new update entry for this row
-                    orig_row = id_to_row_map.get(row_id, {})
-                    updates[row_id] = {
-                        'id': row_id,
-                        'sport': orig_row.get('sport'),
-                        'market_id': orig_row.get('market_id'),
-                        'runner_name': orig_row.get('runner_name'),
-                        'price_pinnacle': prices['price_pinnacle'],
-                        'last_updated': datetime.now(timezone.utc).isoformat()
-                    }
-            if asian_prices:
-                logger.info(f"🇸🇬 AsianOdds: Applied {len(asian_prices)} sharp prices")
-
-            # Clear stale PIN prices for AO-sport rows that didn't get a match this cycle.
-            # Prevents false matches from persisting after matching logic is fixed.
-            ao_matched_ids = set(asian_prices.keys())
-            stale_cleared = 0
-            for row in active_rows:
-                if row['sport'] not in ASIANODDS_SPORT_MAP:
-                    continue
-                row_id = row['id']
-                if row_id in ao_matched_ids:
-                    continue
-                orig_row = id_to_row_map.get(row_id, {})
-                if orig_row.get('price_pinnacle') is not None:
-                    if row_id in updates:
-                        updates[row_id]['price_pinnacle'] = None
-                    else:
-                        updates[row_id] = {
-                            'id': row_id,
-                            'sport': orig_row.get('sport'),
-                            'market_id': orig_row.get('market_id'),
-                            'runner_name': orig_row.get('runner_name'),
-                            'price_pinnacle': None,
-                            'last_updated': datetime.now(timezone.utc).isoformat()
-                        }
-                    stale_cleared += 1
-            if stale_cleared:
-                logger.info(f"🧹 Cleared {stale_cleared} stale PIN prices")
-        except Exception as e:
-            logger.error(f"AsianOdds integration error: {e}")
-    # ------------------------------------
+    # AO prices now run independently via run_ao_cycle() on every main loop tick.
+    # Cache active rows for it to use.
+    global _cached_active_rows, _cached_id_to_row_map
+    _cached_active_rows = active_rows
+    _cached_id_to_row_map = id_to_row_map
 
     if updates:
         logger.info(f"Spy: Updating {len(updates)} rows...")
@@ -1171,6 +1177,9 @@ if __name__ == "__main__":
                 trading.login()
                 
         fetch_betfair()
+
+        # AO prices on every tick (~6s) — independent of spy cycle
+        run_ao_cycle()
 
         # Dynamic spy interval: fast during in-play, slow otherwise
         spy_interval = INPLAY_SPY_INTERVAL if has_inplay_markets() else PREMATCH_SPY_INTERVAL
