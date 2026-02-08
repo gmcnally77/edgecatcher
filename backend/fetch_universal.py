@@ -612,12 +612,18 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
 
                         if pin_price and pin_price > 1.01:
                             row_id = row['id']
-                            updates[row_id] = {
-                                'price_pinnacle': pin_price
-                            }
-                            ao_matched_this = True
-                            src = 'PIN' if 'PIN' in parsed_odds else 'SIN'
-                            logger.info(f"✓ {src}: {row['runner_name']} @ {pin_price}")
+                            league = match.get('LeagueName', '?')
+                            if row_id not in updates:
+                                # First AO match wins — prevents cross-league
+                                # contamination (e.g. cup match overwriting EPL)
+                                updates[row_id] = {
+                                    'price_pinnacle': pin_price
+                                }
+                                ao_matched_this = True
+                                src = 'PIN' if 'PIN' in parsed_odds else 'SIN'
+                                logger.info(f"✓ {src}: {row['runner_name']} @ {pin_price} [{league}]")
+                            else:
+                                logger.info(f"⊘ {row['runner_name']}: skipped {pin_price} from [{league}] (already matched)")
                         else:
                             logger.debug(f"⚠ {row['runner_name']}: matched but side={side} price={pin_price} (odds={pin_odds})")
 
