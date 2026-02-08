@@ -152,22 +152,22 @@ ALIAS_MAP = {
 
     # --- EPL (English Premier League) ---
     "manchesterunited": ["manutd", "manunited", "manu"],
-    "manutd": ["manchesterunited"],
-    "manunited": ["manchesterunited"],
+    "manutd": ["manchesterunited", "manunited"],
+    "manunited": ["manchesterunited", "manutd"],
     "manchestercity": ["mancity", "mcfc"],
-    "mancity": ["manchestercity"],
+    "mancity": ["manchestercity", "mcfc"],
     "tottenhamhotspur": ["tottenham", "spursfc", "thfc"],
-    "tottenham": ["tottenhamhotspur"],
+    "tottenham": ["tottenhamhotspur", "spursfc", "thfc"],
     "newcastleunited": ["newcastle", "nufc"],
-    "newcastle": ["newcastleunited"],
+    "newcastle": ["newcastleunited", "nufc"],
     "westhamunited": ["westham", "whu"],
-    "westham": ["westhamunited"],
+    "westham": ["westhamunited", "whu"],
     "wolverhamptonwanderers": ["wolves", "wolverhampton", "wwfc"],
-    "wolves": ["wolverhamptonwanderers"],
-    "wolverhampton": ["wolverhamptonwanderers"],
+    "wolves": ["wolverhamptonwanderers", "wolverhampton", "wwfc"],
+    "wolverhampton": ["wolverhamptonwanderers", "wolves", "wwfc"],
     "nottinghamforest": ["nottmforest", "nottsforest", "nffc", "forest"],
-    "nottmforest": ["nottinghamforest"],
-    "forest": ["nottinghamforest"],
+    "nottmforest": ["nottinghamforest", "nottsforest", "forest"],
+    "forest": ["nottinghamforest", "nottmforest", "nottsforest"],
 }
 
 # --- SCOPE GUARD (NEW) ---
