@@ -158,13 +158,13 @@ class AsianOddsClient:
         result = data.get("Result") or {}
         return result.get("Leagues", []) if isinstance(result, dict) else []
 
-    def get_feeds(self, sport_id, market_type_id=0, odds_format="00"):
+    def get_feeds(self, sport_id, market_type_id=1, odds_format="00"):
         """
         Get odds feeds for a sport.
 
         Args:
             sport_id: Sport type ID (1=Soccer, 3=Basketball, etc.)
-            market_type_id: 0=Live, 1=Today, 2=Early
+            market_type_id: 1=Live, 2=Today, 3=Early
             odds_format: "00"=Decimal, "01"=HK, "02"=Malay, "03"=Indo
 
         Returns:
@@ -207,13 +207,13 @@ class AsianOddsClient:
         result = data.get("Result") or {}
         return result.get("Sports", []) if isinstance(result, dict) else []
 
-    def get_matches(self, sport_id, market_type_id=1):
+    def get_matches(self, sport_id, market_type_id=2):
         """
         Get match list for a sport.
 
         Args:
             sport_id: Sport type ID
-            market_type_id: 0=Live, 1=Today, 2=Early
+            market_type_id: 1=Live, 2=Today, 3=Early
         """
         if not self.ensure_authenticated():
             return []

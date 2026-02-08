@@ -350,8 +350,7 @@ def run_ao_cycle():
 
     try:
         asian_prices = fetch_asianodds_prices(_cached_active_rows, _cached_id_to_row_map)
-        if asian_prices is None:
-            # AO is unreachable — don't clear stale prices (could be temporary)
+        if not asian_prices:
             return
 
         updates = {}
@@ -366,11 +365,8 @@ def run_ao_cycle():
                 'last_updated': datetime.now(timezone.utc).isoformat()
             }
 
-        # Clear stale PIN prices for rows that didn't match.
-        # This runs even when asian_prices is empty (AO is healthy but
-        # no matches found) — prevents stale prices from persisting.
+        # Clear stale PIN prices for rows that didn't match
         ao_matched_ids = set(asian_prices.keys())
-        stale_cleared = 0
         for row in _cached_active_rows:
             if row['sport'] not in ASIANODDS_SPORT_MAP:
                 continue
@@ -387,16 +383,12 @@ def run_ao_cycle():
                     'price_pinnacle': None,
                     'last_updated': datetime.now(timezone.utc).isoformat()
                 }
-                stale_cleared += 1
 
         if updates:
             data_list = list(updates.values())
             for i in range(0, len(data_list), 100):
                 supabase.table('market_feed').upsert(data_list[i:i+100], on_conflict='id').execute()
-            msg = f"AO: {len(asian_prices)} PIN prices written"
-            if stale_cleared:
-                msg += f", {stale_cleared} stale cleared"
-            logger.info(msg)
+            logger.info(f"🇸🇬 AO: {len(asian_prices)} PIN prices written")
     except Exception as e:
         logger.error(f"AO cycle error: {e}")
 
@@ -404,17 +396,16 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
     """
     Fetch sharp Asian prices and match to our active markets.
     Returns dict: {row_id: {'price_pinnacle': pin_price}}
-    Returns None if AO is unreachable (vs {} for healthy but no matches).
     """
     global _asianodds_cache, _asianodds_cache_time
 
     if not ASIANODDS_ENABLED:
-        return None
+        return {}
 
     ao_client = get_asianodds_client()
     if not ao_client:
         logger.warning("AsianOdds client not configured - skipping")
-        return None
+        return {}
 
     updates = {}
     now = time.time()
@@ -424,16 +415,11 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
         ao_skipped_no_pin = 0
         try:
             # Fetch Live, Today, and Early with separate TTLs
-            # AO API market type IDs: 0=Live, 1=Today, 2=Early
-            # NBA only appears in Live market (market_type=0) — not in Today/Early
+            # NBA only appears in Live market (market_type=1) — not in Today/Early
             # EPL matches near kickoff also move to Live before they start
             all_matches = []
 
-            # Process Early→Today→Live so the freshest market type gets the last
-            # write when a match appears in multiple types (e.g. match transitions
-            # from Early→Today as kickoff approaches — stale Early prices must not
-            # overwrite fresh Today prices).
-            market_types = [(2, ASIANODDS_TTL_EARLY), (1, ASIANODDS_TTL_TODAY), (0, ASIANODDS_TTL_LIVE)]
+            market_types = [(1, ASIANODDS_TTL_LIVE), (2, ASIANODDS_TTL_TODAY), (3, ASIANODDS_TTL_EARLY)]
             for market_type, ttl in market_types:
                 cache_key = f"{sport_id}_{market_type}"
                 cache_age = now - _asianodds_cache_time.get(cache_key, 0)
@@ -461,9 +447,10 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
                     # Filter out any None values
                     filtered = [m for m in matches if m and isinstance(m, dict)]
 
-                    # MERGE into existing cache — API may return incremental
-                    # deltas even after restart if session persists. Merging
-                    # preserves matches not in the current response.
+                    # MERGE into existing cache — API returns full snapshot on first
+                    # call after login, then incremental updates on subsequent calls.
+                    # We key by home+away team name so updates refresh prices while
+                    # preserving matches not in the incremental batch.
                     existing = _asianodds_cache.get(cache_key, {})
                     if not isinstance(existing, dict):
                         existing = {}  # reset if old format
@@ -498,23 +485,8 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
                     _save_ao_cache(_asianodds_cache)  # persist to disk
                     all_matches.extend(existing.values())
 
-                    mtype_name = {0: "Live", 1: "Today", 2: "Early"}.get(market_type, str(market_type))
+                    mtype_name = {1: "Live", 2: "Today", 3: "Early"}.get(market_type, str(market_type))
                     logger.info(f"AsianOdds {sport_name} {mtype_name}: {len(filtered)} fresh, {len(existing)} total cached")
-
-            # Deduplicate: if a match appears in multiple market types (Early + Today),
-            # keep only the last one added (which is the freshest due to loop order).
-            deduped = {}
-            for m in all_matches:
-                home_obj = m.get('HomeTeam') or {}
-                away_obj = m.get('AwayTeam') or {}
-                h = home_obj.get('Name', '') if isinstance(home_obj, dict) else ''
-                a = away_obj.get('Name', '') if isinstance(away_obj, dict) else ''
-                if not h: h = m.get('HomeTeamName', '')
-                if not a: a = m.get('AwayTeamName', '')
-                league = m.get('LeagueName', '')
-                key = f"{h}_{a}_{league}" if h and a else id(m)
-                deduped[key] = m  # last write wins (Live > Today > Early)
-            all_matches = list(deduped.values())
 
             feeds = [{'MatchGames': all_matches}] if all_matches else []
 
@@ -607,21 +579,12 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
 
                         if pin_price and pin_price > 1.01:
                             row_id = row['id']
-                            league = match.get('LeagueName', '?')
-                            if row_id not in updates:
-                                # First AO match wins — prevents cross-league
-                                # contamination (e.g. cup match overwriting EPL)
-                                updates[row_id] = {
-                                    'price_pinnacle': pin_price
-                                }
-                                ao_matched_this = True
-                                src = 'PIN' if 'PIN' in parsed_odds else 'SIN'
-                                logger.info(f"✓ {src}: {row['runner_name']} @ {pin_price} [{league}] ({row.get('event_name', '')})")
-                            else:
-                                logger.info(f"⊘ {row['runner_name']}: skipped {pin_price} from [{league}] (already matched)")
-                        else:
-                            league = match.get('LeagueName', '?')
-                            logger.info(f"⚠ {row['runner_name']}: side={side} price={pin_price} [{league}] AO={home_team} v {away_team} raw={bookie_odds_str[:80]}")
+                            updates[row_id] = {
+                                'price_pinnacle': pin_price
+                            }
+                            ao_matched_this = True
+                            src = 'PIN' if 'PIN' in parsed_odds else 'SIN'
+                            logger.info(f"✓ {src}: {row['runner_name']} @ {pin_price}")
 
             # Summary line per sport
             sport_rows = [r for r in active_rows if r['sport'] == sport_name]
