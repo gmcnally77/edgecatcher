@@ -164,7 +164,7 @@ class AsianOddsClient:
 
         Args:
             sport_id: Sport type ID (1=Soccer, 3=Basketball, etc.)
-            market_type_id: 1=Live, 2=Today, 3=Early
+            market_type_id: 0=Live, 1=Today, 2=Early
             odds_format: "00"=Decimal, "01"=HK, "02"=Malay, "03"=Indo
 
         Returns:
@@ -213,7 +213,7 @@ class AsianOddsClient:
 
         Args:
             sport_id: Sport type ID
-            market_type_id: 1=Live, 2=Today, 3=Early
+            market_type_id: 0=Live, 1=Today, 2=Early
         """
         if not self.ensure_authenticated():
             return []

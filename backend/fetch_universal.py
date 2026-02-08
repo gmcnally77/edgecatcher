@@ -419,7 +419,7 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
             # EPL matches near kickoff also move to Live before they start
             all_matches = []
 
-            market_types = [(1, ASIANODDS_TTL_LIVE), (2, ASIANODDS_TTL_TODAY), (3, ASIANODDS_TTL_EARLY)]
+            market_types = [(0, ASIANODDS_TTL_LIVE), (1, ASIANODDS_TTL_TODAY), (2, ASIANODDS_TTL_EARLY)]
             for market_type, ttl in market_types:
                 cache_key = f"{sport_id}_{market_type}"
                 cache_age = now - _asianodds_cache_time.get(cache_key, 0)
@@ -485,7 +485,7 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
                     _save_ao_cache(_asianodds_cache)  # persist to disk
                     all_matches.extend(existing.values())
 
-                    mtype_name = {1: "Live", 2: "Today", 3: "Early"}.get(market_type, str(market_type))
+                    mtype_name = {0: "Live", 1: "Today", 2: "Early"}.get(market_type, str(market_type))
                     logger.info(f"AsianOdds {sport_name} {mtype_name}: {len(filtered)} fresh, {len(existing)} total cached")
 
             feeds = [{'MatchGames': all_matches}] if all_matches else []
@@ -1064,7 +1064,6 @@ def fetch_betfair():
             
             if not markets:
                 logger.warning(f"⚠️ No markets found for {sport_conf['name']} (Check Query/Filter)")
-                continue
                 continue
 
             price_projection = filters.price_projection(price_data=['EX_BEST_OFFERS', 'EX_TRADED'], virtualise=True)
