@@ -190,6 +190,11 @@ class AsianOddsClient:
             error_msg = result.get("TextMessage", "Unknown error") if isinstance(result, dict) else "Unknown error"
             logger.warning(f"GetFeeds failed: Code={code}, Message={error_msg}, Result={result}")
 
+            # Rate limit violation — back off, do NOT re-auth
+            if isinstance(code, int) and abs(code) == 810:
+                logger.warning(f"Rate limit hit (Code {code}) — backing off")
+                return []
+
             # Auto-recover from auth/session errors (any negative code)
             if isinstance(code, int) and code < 0:
                 logger.info(f"Session error (Code {code}), re-authenticating...")
@@ -270,7 +275,7 @@ class AsianOddsClient:
             else:
                 # Extract bookie code (letters at start)
                 import re
-                match = re.match(r'^([A-Za-z0-9]+)([\d.,]+)$', part)
+                match = re.match(r'^([A-Za-z]+)([\d.,]+)$', part)
                 if match:
                     bookie = match.group(1)
                     prices_str = match.group(2)

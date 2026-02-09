@@ -340,6 +340,7 @@ def _save_ao_cache(cache):
 _asianodds_cache = _load_ao_cache()
 _asianodds_cache_time = {}
 _asianodds_last_reauth = 0
+_ao_last_fetch_by_market = {}  # Per-market-type rate limit timers {0:Live, 1:Today, 2:Early}
 
 # Cached row data for independent AO cycle
 _cached_active_rows = []
@@ -425,14 +426,14 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
                     cached = _asianodds_cache[cache_key] or {}
                     all_matches.extend([m for m in cached.values() if m and isinstance(m, dict)])
                 else:
-                    # Fetch fresh — delay between calls to avoid Code -810 rate limit
-                    last_fetch = getattr(fetch_asianodds_prices, '_last_fetch_time', 0)
+                    # Fetch fresh — rate limits are per market type (Live/Today/Early)
+                    last_fetch = _ao_last_fetch_by_market.get(market_type, 0)
                     elapsed = time.time() - last_fetch
                     if elapsed < ttl and last_fetch > 0:
                         time.sleep(ttl - elapsed)
 
                     feed_data = ao_client.get_feeds(sport_id, market_type_id=market_type, odds_format="00")
-                    fetch_asianodds_prices._last_fetch_time = time.time()
+                    _ao_last_fetch_by_market[market_type] = time.time()
 
                     matches = []
                     if feed_data and isinstance(feed_data, list):
@@ -440,8 +441,10 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
                             if sf and isinstance(sf, dict):
                                 matches.extend(sf.get('MatchGames', []) or [])
 
-                    # Filter out any None values
-                    filtered = [m for m in matches if m and isinstance(m, dict)]
+                    # Filter out None, removed, and inactive entries
+                    filtered = [m for m in matches if m and isinstance(m, dict)
+                                and not m.get('WillBeRemoved', False)
+                                and m.get('IsActive', True) is not False]
 
                     # Build new entries dict from this fetch
                     new_entries = {}
@@ -497,6 +500,10 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
                     if not match or not isinstance(match, dict):
                         continue
 
+                    # Skip removed/inactive markets (AO API flags)
+                    if match.get('WillBeRemoved', False) or match.get('IsActive', True) is False:
+                        continue
+
                     # Team names - try nested first, then flat
                     home_obj = match.get('HomeTeam') or {}
                     away_obj = match.get('AwayTeam') or {}
@@ -518,8 +525,7 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
                     # Get odds - try multiple fields, use whichever has BookieOdds
                     # NBA Live market has odds in FullTimeOneXTwo (not MoneyLine)
                     bookie_odds_str = ''
-                    for field in (['FullTimeMoneyLine', 'FullTimeOneXTwo'] if sport_name == 'Basketball'
-                                  else ['FullTimeOneXTwo', 'FullTimeMoneyLine']):
+                    for field in ['FullTimeOneXTwo', 'FullTimeMoneyLine']:
                         md = match.get(field) or {}
                         odds = md.get('BookieOdds', '') if isinstance(md, dict) else ''
                         if odds:
