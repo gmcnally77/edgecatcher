@@ -14,12 +14,12 @@ export default function LandingPage() {
         <div className="max-w-5xl mx-auto px-4 pt-20 pb-16 md:pt-28 md:pb-24 relative">
           <div className="text-center space-y-6">
             <h1 className="text-4xl md:text-6xl font-bold text-white tracking-tight leading-tight">
-              Bookie vs Exchange.<br />
+              Real-time Odds Comparison.<br />
               <span className="text-blue-400">Real-time.</span>
             </h1>
             <p className="text-lg md:text-xl text-slate-400 max-w-2xl mx-auto leading-relaxed">
               EdgeCatcher compares Pinnacle, Ladbrokes, and PaddyPower against the
-              Betfair Exchange lay price. When a bookie is offering more — you see it instantly.
+              true market price. When a bookie is offering more — you see it instantly.
             </p>
 
             <div className="flex flex-col sm:flex-row gap-3 justify-center pt-4">
@@ -59,17 +59,17 @@ export default function LandingPage() {
             <StepCard
               number="1"
               title="We scan"
-              description="Every 2 seconds, we pull live prices from Pinnacle, Ladbrokes, and PaddyPower alongside the Betfair Exchange back and lay."
+              description="Every 2 seconds, we pull live prices from Pinnacle, Ladbrokes, and PaddyPower alongside the true market back and lay."
             />
             <StepCard
               number="2"
               title="We compare"
-              description="When a bookie price exceeds the exchange lay, that's a positive edge. It's highlighted green so you can see it at a glance."
+              description="When a bookie price exceeds the market lay, that's a positive edge. It's highlighted green so you can see it at a glance."
             />
             <StepCard
               number="3"
               title="You act"
-              description="Place the value bet at the bookie. Lay it off on the exchange if you want. Telegram alerts catch moves you'd miss."
+              description="Place the value bet at the bookie. Lay it off if you want. Telegram alerts catch moves you'd miss."
             />
           </div>
         </div>
@@ -86,7 +86,7 @@ export default function LandingPage() {
             <FeatureCard
               icon={<BarChart3 size={24} />}
               title="Live Edge Scanner"
-              description="Side-by-side bookie vs exchange prices across NBA, EPL, and MMA. Updated every 2 seconds. Positive edges highlighted green."
+              description="Side-by-side bookie vs market prices across NBA, EPL, and MMA. Updated every 2 seconds. Positive edges highlighted green."
             />
             <FeatureCard
               icon={<Bell size={24} />}
@@ -96,7 +96,7 @@ export default function LandingPage() {
             <FeatureCard
               icon={<Shield size={24} />}
               title="Pinnacle Sharp Line"
-              description="The market's sharpest bookmaker price as your reference point. Sourced live from AsianOdds for maximum accuracy."
+              description="The market's sharpest bookmaker price as your reference point. Sourced live for maximum accuracy."
             />
             <FeatureCard
               icon={<Zap size={24} />}
@@ -163,15 +163,15 @@ export default function LandingPage() {
           <div className="space-y-6">
             <FAQItem
               question="How fresh is the data?"
-              answer="Prices update every 2 seconds from live API feeds. Pinnacle prices are sourced directly from AsianOdds for maximum accuracy."
+              answer="Prices update every 2 seconds from live API feeds. Pinnacle prices are sourced directly for maximum accuracy."
             />
             <FAQItem
               question="What bookmakers do you cover?"
-              answer="Pinnacle (the sharpest line in the market), Ladbrokes, and PaddyPower. All compared against the Betfair Exchange. More bookmakers are being added."
+              answer="Pinnacle (the sharpest line in the market), Ladbrokes, and PaddyPower. All compared against the true market price. More bookmakers are being added."
             />
             <FAQItem
               question="How do Telegram alerts work?"
-              answer="Our steamer bot monitors price movements across all markets. When a bookie price moves significantly above the exchange lay, you get an instant Telegram notification with the edge percentage and prices."
+              answer="Our steamer bot monitors price movements across all markets. When a bookie price moves significantly above the market lay, you get an instant Telegram notification with the edge percentage and prices."
             />
             <FAQItem
               question="Can I cancel anytime?"

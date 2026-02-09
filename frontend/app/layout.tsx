@@ -15,11 +15,11 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "EdgeCatcher | Bookie vs Exchange Odds Comparison",
-  description: "Real-time odds comparison tool. Compare Pinnacle, Ladbrokes, and PaddyPower prices against Betfair Exchange. Find positive edge bets across NBA, EPL, and MMA.",
+  title: "EdgeCatcher | Real-time Odds Comparison",
+  description: "Real-time odds comparison tool. Compare Pinnacle, Ladbrokes, and PaddyPower prices against the true market price. Find positive edge bets across NBA, EPL, and MMA.",
   openGraph: {
-    title: "EdgeCatcher | Bookie vs Exchange Odds Comparison",
-    description: "Real-time odds comparison tool. Compare Pinnacle, Ladbrokes, and PaddyPower against Betfair Exchange. Find value bets instantly.",
+    title: "EdgeCatcher | Real-time Odds Comparison",
+    description: "Real-time odds comparison tool. Compare Pinnacle, Ladbrokes, and PaddyPower against the true market price. Find value bets instantly.",
     type: "website",
   },
 };
