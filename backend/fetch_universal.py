@@ -311,6 +311,7 @@ def has_inplay_markets():
 ASIANODDS_TTL_LIVE = 5     # Exact limit
 ASIANODDS_TTL_TODAY = 10   # Exact limit
 ASIANODDS_TTL_EARLY = 20   # Exact limit
+ASIANODDS_REAUTH_INTERVAL = 120  # Re-auth every 2 mins for fresh full snapshot
 ASIANODDS_CACHE_FILE = os.path.join(CACHE_DIR, "asianodds_cache.json")
 
 def _load_ao_cache():
@@ -338,6 +339,7 @@ def _save_ao_cache(cache):
 
 _asianodds_cache = _load_ao_cache()
 _asianodds_cache_time = {}
+_asianodds_last_reauth = 0
 
 # Cached row data for independent AO cycle
 _cached_active_rows = []
@@ -397,7 +399,7 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
     Fetch sharp Asian prices and match to our active markets.
     Returns dict: {row_id: {'price_pinnacle': pin_price}}
     """
-    global _asianodds_cache, _asianodds_cache_time
+    global _asianodds_cache, _asianodds_cache_time, _asianodds_last_reauth
 
     if not ASIANODDS_ENABLED:
         return {}
@@ -409,6 +411,21 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
 
     updates = {}
     now = time.time()
+
+    # Periodic re-auth to get fresh full snapshot (resets incremental delta baseline).
+    # Don't clear cache — the snapshot overwrites entries, so no flicker.
+    if now - _asianodds_last_reauth > ASIANODDS_REAUTH_INTERVAL:
+        logger.info("AO: Periodic re-auth for fresh snapshot...")
+        ao_client.ao_token = None
+        ao_client.ao_key = None
+        if ao_client.login() and ao_client.register():
+            # Expire cache timestamps so all buckets re-fetch immediately
+            _asianodds_cache_time = {}
+            _asianodds_last_reauth = now
+            logger.info("AO: Re-auth OK — next fetch will be full snapshot")
+        else:
+            logger.error("AO: Re-auth failed")
+            _asianodds_last_reauth = now
 
     for sport_name, sport_id in ASIANODDS_SPORT_MAP.items():
         ao_has_pin = 0
@@ -447,14 +464,8 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
                     # Filter out any None values
                     filtered = [m for m in matches if m and isinstance(m, dict)]
 
-                    # MERGE into existing cache — API returns full snapshot on first
-                    # call after login, then incremental updates on subsequent calls.
-                    # We key by home+away team name so updates refresh prices while
-                    # preserving matches not in the incremental batch.
-                    existing = _asianodds_cache.get(cache_key, {})
-                    if not isinstance(existing, dict):
-                        existing = {}  # reset if old format
-
+                    # Build new entries dict from this fetch
+                    new_entries = {}
                     for m in filtered:
                         home_obj = m.get('HomeTeam') or {}
                         away_obj = m.get('AwayTeam') or {}
@@ -465,20 +476,30 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
                         if not a:
                             a = m.get('AwayTeamName', '')
                         if h and a:
-                            # Include league to avoid collisions (EPL vs U21/reserves)
                             league = m.get('LeagueName', '')
                             cache_entry_key = f"{h}_{a}_{league}"
-                            # Live feed returns multiple entries per game (1X2, handicap, O/U).
-                            # Only overwrite if new entry has odds — don't clobber a good entry
-                            # with an empty one.
                             has_odds = False
                             for odds_field in ['FullTimeOneXTwo', 'FullTimeMoneyLine']:
                                 od = m.get(odds_field) or {}
                                 if isinstance(od, dict) and od.get('BookieOdds'):
                                     has_odds = True
                                     break
-                            if has_odds or cache_entry_key not in existing:
-                                existing[cache_entry_key] = m
+                            if has_odds or cache_entry_key not in new_entries:
+                                new_entries[cache_entry_key] = m
+
+                    existing = _asianodds_cache.get(cache_key, {})
+                    if not isinstance(existing, dict):
+                        existing = {}
+
+                    # Full snapshot (many matches) = replace cache entirely.
+                    # Incremental delta (few matches) = merge into existing.
+                    if len(new_entries) >= 3:
+                        # Full snapshot — replace, don't merge stale entries
+                        existing = new_entries
+                    else:
+                        # Incremental delta — merge updates into existing
+                        for k, v in new_entries.items():
+                            existing[k] = v
 
                     _asianodds_cache[cache_key] = existing
                     _asianodds_cache_time[cache_key] = time.time()
