@@ -311,6 +311,7 @@ def has_inplay_markets():
 ASIANODDS_TTL_LIVE = 5     # Exact limit
 ASIANODDS_TTL_TODAY = 10   # Exact limit
 ASIANODDS_TTL_EARLY = 20   # Exact limit
+ASIANODDS_REAUTH_INTERVAL = 300  # Force re-auth every 5 mins to get fresh full snapshot
 ASIANODDS_CACHE_FILE = os.path.join(CACHE_DIR, "asianodds_cache.json")
 
 def _load_ao_cache():
@@ -338,6 +339,7 @@ def _save_ao_cache(cache):
 
 _asianodds_cache = _load_ao_cache()
 _asianodds_cache_time = {}
+_asianodds_last_reauth = 0  # Track when we last forced a full re-auth
 
 # Cached row data for independent AO cycle
 _cached_active_rows = []
@@ -397,7 +399,7 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
     Fetch sharp Asian prices and match to our active markets.
     Returns dict: {row_id: {'price_pinnacle': pin_price}}
     """
-    global _asianodds_cache, _asianodds_cache_time
+    global _asianodds_cache, _asianodds_cache_time, _asianodds_last_reauth
 
     if not ASIANODDS_ENABLED:
         return {}
@@ -409,6 +411,21 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
 
     updates = {}
     now = time.time()
+
+    # Force periodic re-auth to get fresh full snapshot instead of stale incremental deltas
+    if now - _asianodds_last_reauth > ASIANODDS_REAUTH_INTERVAL:
+        logger.info("AO: Forcing re-auth for fresh snapshot...")
+        ao_client.ao_token = None
+        ao_client.ao_key = None
+        if ao_client.login() and ao_client.register():
+            # Clear cache so next fetch builds from fresh snapshot
+            _asianodds_cache = {}
+            _asianodds_cache_time = {}
+            _asianodds_last_reauth = now
+            logger.info("AO: Re-auth successful, cache cleared")
+        else:
+            logger.error("AO: Re-auth failed, continuing with existing session")
+            _asianodds_last_reauth = now  # Don't retry immediately
 
     for sport_name, sport_id in ASIANODDS_SPORT_MAP.items():
         ao_has_pin = 0
