@@ -85,8 +85,8 @@ if not os.path.exists(CACHE_DIR):
 # Maps our sport names to AsianOdds sport type IDs
 # From GetSports: 1=Football, 2=Basketball, 3=Tennis, 5=AmFootball, 9=MMA
 ASIANODDS_SPORT_MAP = {
+    'Basketball': 2,    # Basketball - has 1X2 moneyline (FullTimeOneXTwo) — priority
     'Soccer': 1,        # Football/Soccer - has 1X2 odds
-    'Basketball': 2,    # Basketball - has 1X2 moneyline (FullTimeOneXTwo)
     'MMA': 9,           # MMA - has 1X2 odds (moneyline)
 }
 
