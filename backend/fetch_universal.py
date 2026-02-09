@@ -410,6 +410,7 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
     for sport_name, sport_id in ASIANODDS_SPORT_MAP.items():
         ao_has_pin = 0
         ao_skipped_no_pin = 0
+        ao_unmatched = []
         try:
             # Fetch Live, Today, and Early with separate TTLs
             # NBA only appears in Live market (market_type=1) — not in Today/Early
@@ -587,9 +588,21 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
                             src = 'PIN' if 'PIN' in parsed_odds else 'SIN'
                             logger.info(f"✓ {src}: {row['runner_name']} @ {pin_price}")
 
+                    if not ao_matched_this:
+                        ao_unmatched.append(f"{home_team} v {away_team} (norm: {norm_home} v {norm_away})")
+
             # Summary line per sport
             sport_rows = [r for r in active_rows if r['sport'] == sport_name]
             logger.info(f"AO {sport_name}: {ao_has_pin} with PIN, {ao_skipped_no_pin} without PIN, {len(sport_rows)} DB rows")
+
+            # Diagnostic: show unmatched AO games with PIN prices
+            if ao_unmatched:
+                logger.warning(f"AO {sport_name}: {len(ao_unmatched)} games with PIN but NO DB match:")
+                for g in ao_unmatched[:10]:
+                    logger.warning(f"  UNMATCHED: {g}")
+                # Also show DB rows for comparison
+                db_runners = [f"{r['norm_runner']}|{r['norm_event']}" for r in sport_rows[:10]]
+                logger.warning(f"  DB rows ({len(sport_rows)}): {db_runners}")
 
         except Exception as e:
             logger.error(f"AsianOdds fetch error for {sport_name}: {e}")
@@ -816,9 +829,11 @@ def run_spy():
             bookmakers = event.get('bookmakers', []) or []
             pin_book = next((b for b in bookmakers if 'pinnacle' in str(b.get('key', '')).lower()), None)
             
-            # ✅ FIX: Dynamically switch to 'william' if the config asks for it
-            primary_key = 'william' if sport.get('use_williamhill_as_primary') else 'ladbrokes'
-            ladbrokes_book = next((b for b in bookmakers if primary_key in str(b.get('key', '')).lower()), None)
+            # Ladbrokes column: use williamhill for sports that flag it, otherwise ladbrokes_uk
+            if sport.get('use_williamhill_as_primary'):
+                ladbrokes_book = next((b for b in bookmakers if 'william' in str(b.get('key', '')).lower()), None)
+            else:
+                ladbrokes_book = next((b for b in bookmakers if 'ladbrokes' in str(b.get('key', '')).lower()), None)
             paddy_book = next((b for b in bookmakers if 'paddypower' in str(b.get('key', '')).lower()), None)
 
             ref_outcomes = get_h2h(pin_book) or get_h2h(ladbrokes_book) or get_h2h(paddy_book)
