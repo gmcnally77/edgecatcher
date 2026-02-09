@@ -340,7 +340,6 @@ def _save_ao_cache(cache):
 _asianodds_cache = _load_ao_cache()
 _asianodds_cache_time = {}
 _asianodds_last_reauth = 0
-_asianodds_snapshot_pending = False  # True after re-auth = next fetch is full snapshot
 
 # Cached row data for independent AO cycle
 _cached_active_rows = []
@@ -368,25 +367,6 @@ def run_ao_cycle():
                 'last_updated': datetime.now(timezone.utc).isoformat()
             }
 
-        # Clear stale PIN prices for rows that didn't match
-        ao_matched_ids = set(asian_prices.keys())
-        for row in _cached_active_rows:
-            if row['sport'] not in ASIANODDS_SPORT_MAP:
-                continue
-            row_id = row['id']
-            if row_id in ao_matched_ids:
-                continue
-            orig_row = _cached_id_to_row_map.get(row_id, {})
-            if orig_row.get('price_pinnacle') is not None:
-                updates[row_id] = {
-                    'id': row_id,
-                    'sport': orig_row.get('sport'),
-                    'market_id': orig_row.get('market_id'),
-                    'runner_name': orig_row.get('runner_name'),
-                    'price_pinnacle': None,
-                    'last_updated': datetime.now(timezone.utc).isoformat()
-                }
-
         if updates:
             data_list = list(updates.values())
             for i in range(0, len(data_list), 100):
@@ -400,7 +380,7 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
     Fetch sharp Asian prices and match to our active markets.
     Returns dict: {row_id: {'price_pinnacle': pin_price}}
     """
-    global _asianodds_cache, _asianodds_cache_time, _asianodds_last_reauth, _asianodds_snapshot_pending
+    global _asianodds_cache, _asianodds_cache_time, _asianodds_last_reauth
 
     if not ASIANODDS_ENABLED:
         return {}
@@ -420,7 +400,6 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
         ao_client.ao_key = None
         if ao_client.login() and ao_client.register():
             _asianodds_cache_time = {}  # Force all buckets to re-fetch
-            _asianodds_snapshot_pending = True  # Next fetches are full snapshots
             _asianodds_last_reauth = now
             logger.info("AO: Re-auth OK — next fetch will be full snapshot")
         else:
@@ -491,13 +470,10 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
                     if not isinstance(existing, dict):
                         existing = {}
 
-                    if _asianodds_snapshot_pending and new_entries:
-                        # Post re-auth: this is a full snapshot — replace cache
-                        existing = new_entries
-                    else:
-                        # Incremental delta — merge updates into existing
-                        for k, v in new_entries.items():
-                            existing[k] = v
+                    # Always merge — snapshot overwrites existing entries,
+                    # incremental deltas add/update changed entries
+                    for k, v in new_entries.items():
+                        existing[k] = v
 
                     _asianodds_cache[cache_key] = existing
                     _asianodds_cache_time[cache_key] = time.time()
@@ -622,10 +598,6 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
         logger.info(f"🎯 AsianOdds: Matched {len(updates)} prices {sport_counts}")
     else:
         logger.info(f"AsianOdds: No prices matched to DB rows")
-
-    # Clear snapshot flag after full cycle completes
-    if _asianodds_snapshot_pending:
-        _asianodds_snapshot_pending = False
 
     return updates
 
