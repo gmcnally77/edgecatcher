@@ -17,7 +17,8 @@ BETFAIR_COMMISSION = float(os.getenv('ARB_COMMISSION', '0.02'))
 ARB_MIN_MARGIN = float(os.getenv('ARB_MIN_MARGIN', '0.001'))      # 0.1% min to log
 ARB_ALERT_MARGIN = float(os.getenv('ARB_ALERT_MARGIN', '0.005'))  # 0.5% min for live Telegram alert
 ARB_MIN_VOLUME = int(os.getenv('ARB_MIN_VOLUME', '100'))          # Min BF matched volume
-ARB_MAX_AGE_SECONDS = int(os.getenv('ARB_MAX_AGE', '120'))        # Reject rows older than 2 mins
+ARB_MAX_AGE_SECONDS = int(os.getenv('ARB_MAX_AGE', '60'))         # Reject rows older than 60s
+ARB_MAX_MARGIN = float(os.getenv('ARB_MAX_MARGIN', '0.05'))       # 5% cap — anything higher is stale data
 ARB_ENABLED = os.getenv('ARB_ENABLED', '1') == '1'                # On by default
 
 # --- DATABASE ---
@@ -161,7 +162,7 @@ def scan_arbs(supabase_client):
 
         margin = calc_margin(p_b, p_l)
 
-        if margin >= ARB_MIN_MARGIN:
+        if ARB_MIN_MARGIN <= margin <= ARB_MAX_MARGIN:
             arbs.append({
                 'id': row['id'],
                 'sport': row.get('sport', '?'),
