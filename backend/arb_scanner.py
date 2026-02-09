@@ -21,11 +21,17 @@ ARB_MAX_AGE_SECONDS = int(os.getenv('ARB_MAX_AGE', '60'))         # Reject rows 
 ARB_MAX_MARGIN = float(os.getenv('ARB_MAX_MARGIN', '0.05'))       # 5% cap — anything higher is stale data
 ARB_ENABLED = os.getenv('ARB_ENABLED', '1') == '1'                # On by default
 
+# --- CHURN CONFIG ---
+CHURN_MAX_PRICE = float(os.getenv('CHURN_MAX_PRICE', '2.0'))      # Only short odds worth churning
+CHURN_MAX_COST = float(os.getenv('CHURN_MAX_COST', '0.02'))       # 2% max cost per bet
+CHURN_MIN_VOLUME = int(os.getenv('CHURN_MIN_VOLUME', '50'))        # Min BF matched volume
+
 # --- DATABASE ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ARB_DB_FILE = os.path.join(BASE_DIR, "arb_log.db")
 
 _open_arbs = {}          # market_feed_id -> {first_seen, peak_margin, data}
+_open_churns = {}        # market_feed_id -> {first_seen, data}
 _last_daily_report = 0   # timestamp of last daily report
 _db_initialized = False
 
@@ -181,6 +187,71 @@ def scan_arbs(supabase_client):
     return sorted(arbs, key=lambda x: -x['margin_pct'])
 
 
+def scan_churns(supabase_client):
+    """Scan for low-cost churn opportunities (PIN ~ BF lay at short prices)."""
+    try:
+        response = supabase_client.table('market_feed') \
+            .select('id,sport,event_name,runner_name,price_pinnacle,lay_price,back_price,volume,start_time,last_updated') \
+            .neq('market_status', 'CLOSED') \
+            .not_.is_('price_pinnacle', 'null') \
+            .not_.is_('lay_price', 'null') \
+            .execute()
+    except Exception as e:
+        logger.error(f"Churn scan DB error: {e}")
+        return []
+
+    churns = []
+    now = datetime.now(timezone.utc)
+
+    for row in response.data or []:
+        p_b = float(row.get('price_pinnacle') or 0)
+        p_l = float(row.get('lay_price') or 0)
+
+        if p_b <= 1.01 or p_l <= 1.01:
+            continue
+
+        if p_b > CHURN_MAX_PRICE:
+            continue
+
+        # Staleness check
+        last_updated = row.get('last_updated')
+        if last_updated:
+            try:
+                lu_dt = datetime.fromisoformat(last_updated.replace('Z', '+00:00'))
+                age = (now - lu_dt).total_seconds()
+                if age > ARB_MAX_AGE_SECONDS:
+                    continue
+            except (ValueError, TypeError):
+                continue
+        else:
+            continue
+
+        margin = calc_margin(p_b, p_l)
+
+        # Churn zone: small negative margin (cheap to churn) but not an arb
+        # Arbs (margin >= ARB_MIN_MARGIN) are handled by scan_arbs
+        if -CHURN_MAX_COST <= margin < ARB_MIN_MARGIN:
+            cost_per_100 = abs(margin) * 100
+            lay_stake = calc_lay_stake(100, p_b, p_l)
+            churns.append({
+                'id': row['id'],
+                'sport': row.get('sport', '?'),
+                'event': row.get('event_name', '?'),
+                'runner': row.get('runner_name', '?'),
+                'pin_back': p_b,
+                'bf_lay': p_l,
+                'bf_back': float(row.get('back_price') or 0),
+                'margin_pct': round(margin * 100, 3),
+                'cost_per_100': round(cost_per_100, 2),
+                'lay_stake_per_100': round(lay_stake, 2),
+                'volume': int(row.get('volume') or 0),
+                'last_updated': row.get('last_updated', ''),
+                'start_time': row.get('start_time', ''),
+            })
+
+    return sorted(churns, key=lambda x: x['cost_per_100'])
+
+
 def run_arb_scan(supabase_client):
     """Main entry point — call on every main loop tick."""
     if not ARB_ENABLED:
@@ -237,6 +308,46 @@ def run_arb_scan(supabase_client):
             _log_arb_close(mid, now, duration, info['peak_margin'])
             logger.info(
                 f"ARB CLOSED: {info['data']['runner']} | lasted {duration:.0f}s | peak {info['peak_margin']:.2f}%"
+            )
+
+    # --- CHURN SCAN ---
+    churns = scan_churns(supabase_client)
+    current_churn_ids = set()
+
+    for churn in churns:
+        mid = churn['id']
+        current_churn_ids.add(mid)
+
+        if mid not in _open_churns:
+            _open_churns[mid] = {
+                'first_seen': now,
+                'data': churn,
+            }
+            logger.info(
+                f"CHURN: {churn['runner']} | PIN {churn['pin_back']:.3f} ~ BF lay {churn['bf_lay']:.3f} | "
+                f"cost £{churn['cost_per_100']:.2f}/£100 | vol=£{churn['volume']}"
+            )
+
+            if churn['volume'] >= CHURN_MIN_VOLUME:
+                msg = (
+                    f"<b>CHURN: {churn['runner']}</b>\n"
+                    f"{churn['event']}\n\n"
+                    f"PIN Back: <b>{churn['pin_back']:.3f}</b>\n"
+                    f"BF Lay: <b>{churn['bf_lay']:.3f}</b>\n"
+                    f"Cost: <b>£{churn['cost_per_100']:.2f}/£100</b>\n"
+                    f"Lay £{churn['lay_stake_per_100']:.2f} per £100 back\n"
+                    f"BF Vol: £{churn['volume']:,}\n"
+                    f"{churn['start_time'][:16] if churn['start_time'] else '?'}"
+                )
+                send_telegram_message(msg)
+
+    # Close churns that have disappeared
+    for mid in list(_open_churns.keys()):
+        if mid not in current_churn_ids:
+            info = _open_churns.pop(mid)
+            duration = (now - info['first_seen']).total_seconds()
+            logger.info(
+                f"CHURN CLOSED: {info['data']['runner']} | lasted {duration:.0f}s"
             )
 
     # Daily report check
