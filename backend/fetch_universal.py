@@ -311,7 +311,7 @@ def has_inplay_markets():
 ASIANODDS_TTL_LIVE = 5     # Exact limit
 ASIANODDS_TTL_TODAY = 10   # Exact limit
 ASIANODDS_TTL_EARLY = 20   # Exact limit
-ASIANODDS_REAUTH_INTERVAL = 300  # Force re-auth every 5 mins to get fresh full snapshot
+ASIANODDS_REAUTH_INTERVAL = 30  # Force re-auth every 30s to get fresh full snapshot
 ASIANODDS_CACHE_FILE = os.path.join(CACHE_DIR, "asianodds_cache.json")
 
 def _load_ao_cache():
