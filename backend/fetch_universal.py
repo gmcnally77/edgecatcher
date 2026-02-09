@@ -39,6 +39,17 @@ except ImportError as e:
 except Exception as e:
     logger.warning(f"AsianOdds client error: {e}")
 
+# --- ARB SCANNER IMPORT ---
+try:
+    from arb_scanner import run_arb_scan
+    logger.info("📊 Arb scanner loaded")
+except ImportError as e:
+    run_arb_scan = None
+    logger.warning(f"Arb scanner not available: {e}")
+except Exception as e:
+    run_arb_scan = None
+    logger.warning(f"Arb scanner error: {e}")
+
 # --- IMPORT CONFIG ---
 try:
     from sports_config import SPORTS_CONFIG, ALIAS_MAP, SCOPE_MODE
@@ -417,7 +428,11 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
             # EPL matches near kickoff also move to Live before they start
             all_matches = []
 
-            market_types = [(0, ASIANODDS_TTL_LIVE), (1, ASIANODDS_TTL_TODAY), (2, ASIANODDS_TTL_EARLY)]
+            # Skip Early for Basketball — NBA is never in Early market
+            if sport_name == 'Basketball':
+                market_types = [(0, ASIANODDS_TTL_LIVE), (1, ASIANODDS_TTL_TODAY)]
+            else:
+                market_types = [(0, ASIANODDS_TTL_LIVE), (1, ASIANODDS_TTL_TODAY), (2, ASIANODDS_TTL_EARLY)]
             for market_type, ttl in market_types:
                 cache_key = f"{sport_id}_{market_type}"
                 cache_age = now - _asianodds_cache_time.get(cache_key, 0)
@@ -1209,5 +1224,12 @@ if __name__ == "__main__":
         except Exception as e:
             logger.error(f"Alert Cycle Failed: {e}")
 
-        # RATE LIMIT GUARD: Do not run faster than 1 cycle per 6s (approx 600-1200 calls/hr)
-        time.sleep(6)
+        # --- ARB SCANNER ---
+        if run_arb_scan:
+            try:
+                run_arb_scan(supabase)
+            except Exception as e:
+                logger.error(f"Arb Scan Failed: {e}")
+
+        # RATE LIMIT GUARD: 5s aligns with AO Live rate limit, Today fires every 10s (every other tick)
+        time.sleep(5)
