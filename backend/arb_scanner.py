@@ -159,6 +159,16 @@ def scan_arbs(supabase_client):
         if p_b <= 1.01 or p_l <= 1.01:
             continue
 
+        # Reject past games — stale rows with old exchange prices
+        start_time_str = row.get('start_time')
+        if start_time_str:
+            try:
+                start_dt = datetime.fromisoformat(start_time_str.replace('Z', '+00:00'))
+                if now >= start_dt:
+                    continue
+            except (ValueError, TypeError):
+                pass
+
         # Reject stale rows — phantom arbs from old data
         last_updated = row.get('last_updated')
         if last_updated:
@@ -219,6 +229,16 @@ def scan_churns(supabase_client):
 
         if p_b <= 1.01 or p_l <= 1.01:
             continue
+
+        # Reject past games
+        start_time_str = row.get('start_time')
+        if start_time_str:
+            try:
+                start_dt = datetime.fromisoformat(start_time_str.replace('Z', '+00:00'))
+                if now >= start_dt:
+                    continue
+            except (ValueError, TypeError):
+                pass
 
         if p_b > CHURN_MAX_PRICE:
             continue
