@@ -20,6 +20,7 @@ ARB_MIN_VOLUME = int(os.getenv('ARB_MIN_VOLUME', '100'))          # Min BF match
 ARB_MAX_AGE_SECONDS = int(os.getenv('ARB_MAX_AGE', '60'))         # Reject rows older than 60s
 ARB_MAX_MARGIN = float(os.getenv('ARB_MAX_MARGIN', '0.05'))       # 5% cap — anything higher is stale data
 ARB_ENABLED = os.getenv('ARB_ENABLED', '1') == '1'                # On by default
+ARB_RAW_ALERT_MIN = float(os.getenv('ARB_RAW_ALERT_MIN', '0.0'))  # Min raw gap % for Telegram alert
 
 # --- CHURN CONFIG ---
 CHURN_MAX_PRICE = float(os.getenv('CHURN_MAX_PRICE', '2.0'))      # Only short odds worth churning
@@ -121,8 +122,13 @@ def _log_arb_close(market_feed_id, now, duration, peak_margin):
 
 
 def calc_margin(p_b, p_l):
-    """Calculate arb margin. Positive = profitable."""
+    """Calculate arb margin after commission. Positive = profitable."""
     return ((1 - BETFAIR_COMMISSION) * (p_b - 1) - (p_l - 1)) / p_b
+
+
+def calc_raw_margin(p_b, p_l):
+    """Raw price gap before commission. Positive = PIN back exceeds BF lay."""
+    return (p_b - p_l) / p_l
 
 
 def calc_lay_stake(back_stake, p_b, p_l):
@@ -166,9 +172,11 @@ def scan_arbs(supabase_client):
         else:
             continue  # No timestamp = can't trust it
 
-        margin = calc_margin(p_b, p_l)
+        raw_margin = calc_raw_margin(p_b, p_l)
+        net_margin = calc_margin(p_b, p_l)
 
-        if ARB_MIN_MARGIN <= margin <= ARB_MAX_MARGIN:
+        # Include if raw margin positive (PIN > BF lay) and not suspiciously high
+        if raw_margin > 0 and net_margin <= ARB_MAX_MARGIN:
             arbs.append({
                 'id': row['id'],
                 'sport': row.get('sport', '?'),
@@ -177,14 +185,16 @@ def scan_arbs(supabase_client):
                 'pin_back': p_b,
                 'bf_lay': p_l,
                 'bf_back': float(row.get('back_price') or 0),
-                'margin_pct': round(margin * 100, 3),
-                'profit_per_100': round(margin * 100, 2),
+                'raw_margin_pct': round(raw_margin * 100, 3),
+                'margin_pct': round(net_margin * 100, 3),
+                'profit_per_100': round(net_margin * 100, 2),
+                'is_arb': net_margin >= ARB_MIN_MARGIN,
                 'volume': int(row.get('volume') or 0),
                 'last_updated': row.get('last_updated', ''),
                 'start_time': row.get('start_time', ''),
             })
 
-    return sorted(arbs, key=lambda x: -x['margin_pct'])
+    return sorted(arbs, key=lambda x: -x['raw_margin_pct'])
 
 
 def scan_churns(supabase_client):
@@ -275,20 +285,29 @@ def run_arb_scan(supabase_client):
                 'data': arb,
             }
             _log_arb_open(arb, now)
+            tag = "ARB" if arb['is_arb'] else "CHURN"
             logger.info(
-                f"ARB: {arb['runner']} | PIN {arb['pin_back']:.3f} > BF lay {arb['bf_lay']:.3f} | "
-                f"{arb['margin_pct']:.2f}% | vol=£{arb['volume']}"
+                f"{tag}: {arb['runner']} | PIN {arb['pin_back']:.3f} > BF lay {arb['bf_lay']:.3f} | "
+                f"raw +{arb['raw_margin_pct']:.2f}% | net {arb['margin_pct']:.2f}% | vol=£{arb['volume']}"
             )
 
-            # Live Telegram alert for big arbs
-            if arb['margin_pct'] >= ARB_ALERT_MARGIN * 100 and arb['volume'] >= ARB_MIN_VOLUME:
+            # Live Telegram alert — fire on any raw positive gap
+            if arb['raw_margin_pct'] > ARB_RAW_ALERT_MIN and arb['volume'] >= ARB_MIN_VOLUME:
                 lay_stake = calc_lay_stake(100, arb['pin_back'], arb['bf_lay'])
+                pnl = arb['profit_per_100']
+                if arb['is_arb']:
+                    label = "💰 ARB"
+                    pnl_str = f"+£{pnl:.2f}"
+                else:
+                    label = "🔄 CHURN"
+                    pnl_str = f"-£{abs(pnl):.2f}"
                 msg = (
-                    f"<b>💰 ARB: {arb['runner']}</b>\n"
+                    f"<b>{label}: {arb['runner']}</b>\n"
                     f"📋 {arb['event']}\n\n"
                     f"📌 PIN Back: <b>{arb['pin_back']:.3f}</b>\n"
                     f"🔄 BF Lay: <b>{arb['bf_lay']:.3f}</b>\n"
-                    f"📊 Margin: <b>{arb['margin_pct']:.2f}%</b> (£{arb['profit_per_100']:.2f}/£100)\n"
+                    f"📊 Raw Gap: <b>+{arb['raw_margin_pct']:.2f}%</b>\n"
+                    f"💷 P&L: <b>{pnl_str}</b>/£100 (after {BETFAIR_COMMISSION*100:.0f}% comm)\n"
                     f"💷 Lay £{lay_stake:.2f} per £100 back\n"
                     f"💰 BF Vol: £{arb['volume']:,}\n"
                     f"⏰ {arb['start_time'][:16] if arb['start_time'] else '?'}"
