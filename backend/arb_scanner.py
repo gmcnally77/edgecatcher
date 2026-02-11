@@ -328,18 +328,7 @@ def run_arb_scan(supabase_client):
                 f"cost £{churn['cost_per_100']:.2f}/£100 | vol=£{churn['volume']}"
             )
 
-            if churn['volume'] >= CHURN_MIN_VOLUME:
-                msg = (
-                    f"<b>CHURN: {churn['runner']}</b>\n"
-                    f"{churn['event']}\n\n"
-                    f"PIN Back: <b>{churn['pin_back']:.3f}</b>\n"
-                    f"BF Lay: <b>{churn['bf_lay']:.3f}</b>\n"
-                    f"Cost: <b>£{churn['cost_per_100']:.2f}/£100</b>\n"
-                    f"Lay £{churn['lay_stake_per_100']:.2f} per £100 back\n"
-                    f"BF Vol: £{churn['volume']:,}\n"
-                    f"{churn['start_time'][:16] if churn['start_time'] else '?'}"
-                )
-                send_telegram_message(msg)
+            # Churn Telegram alerts disabled — log only
 
     # Close churns that have disappeared
     for mid in list(_open_churns.keys()):
