@@ -686,6 +686,10 @@ def run_spy():
                 'event': str(row.get('event_name') or "").upper(),
                 'comp': str(row.get('competition') or "").upper()
             })
+        # Skip past games — no point matching AO/API prices to finished events
+        if start_dt and now_utc >= start_dt:
+            continue
+
         is_af = sport_name in ['NFL', 'NCAAF', 'American Football', 'NCAA FCS']
 
         norm_func = normalize_af if is_af else normalize
