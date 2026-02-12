@@ -633,6 +633,9 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
                             }
                             ao_matched_this = True
                             src = 'PIN' if 'PIN' in parsed_odds else 'SIN'
+                            # Debug: log raw odds for EPL matches to diagnose stale prices
+                            if 'brentford' in row['norm_runner'] or 'arsenal' in row['norm_runner']:
+                                logger.info(f"DEBUG {src}: {row['runner_name']} side={side} price={pin_price} raw_odds={bookie_odds_str} parsed={parsed_odds.get('PIN') or parsed_odds.get('SIN')}")
                             logger.info(f"✓ {src}: {row['runner_name']} @ {pin_price}")
 
                     if not ao_matched_this:
