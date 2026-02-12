@@ -90,6 +90,53 @@ ASIANODDS_SPORT_MAP = {
     'MMA': 9,           # MMA - has 1X2 odds (moneyline)
 }
 
+# --- DYNAMIC SPORT DISCOVERY ---
+# Maps AO API sport names (lowercased) to our internal sport names
+_AO_NAME_MAP = {
+    "football": "Soccer",
+    "soccer": "Soccer",
+    "basketball": "Basketball",
+    "mma": "MMA",
+    "ufc": "MMA",
+    "fighting": "MMA",
+    "martial arts": "MMA",
+    "mixed martial arts": "MMA",
+}
+
+def _discover_ao_sports():
+    """Query AO GetSports at startup to dynamically resolve sport IDs."""
+    if not ASIANODDS_ENABLED:
+        return
+    ao_client = get_asianodds_client()
+    if not ao_client:
+        return
+    try:
+        sports_list = ao_client.get_sports()
+        if not sports_list:
+            logger.warning("AO discover_sports: empty response, keeping hardcoded map")
+            return
+        discovered = {}
+        for entry in sports_list:
+            if not isinstance(entry, dict):
+                continue
+            ao_name = str(entry.get("Name") or entry.get("name") or "").strip().lower()
+            ao_id = entry.get("Id") or entry.get("id")
+            if not ao_name or ao_id is None:
+                continue
+            our_name = _AO_NAME_MAP.get(ao_name)
+            if our_name and our_name not in discovered:
+                discovered[our_name] = int(ao_id)
+        if discovered:
+            for name, sid in discovered.items():
+                ASIANODDS_SPORT_MAP[name] = sid
+            logger.info(f"AO discover_sports: Final map = {ASIANODDS_SPORT_MAP}")
+        else:
+            logger.warning("AO discover_sports: no matching sports found, keeping hardcoded map")
+    except Exception as e:
+        logger.warning(f"AO discover_sports failed: {e}, keeping hardcoded map")
+
+_discover_ao_sports()
+
 # --- TRACKING & QUOTA (20K/MO PLAN) ---
 CALLS_TODAY = 0
 LAST_REPORT_DATE = datetime.now(timezone.utc).date()
@@ -322,6 +369,7 @@ def has_inplay_markets():
 ASIANODDS_TTL_LIVE = 5     # Exact limit
 ASIANODDS_TTL_TODAY = 10   # Exact limit
 ASIANODDS_TTL_EARLY = 20   # Exact limit
+ASIANODDS_STALE_THRESHOLD_MS = 60000  # Drop AO entries older than 60s
 ASIANODDS_CACHE_FILE = os.path.join(CACHE_DIR, "asianodds_cache.json")
 
 def _load_ao_cache():
@@ -351,6 +399,7 @@ _asianodds_cache = _load_ao_cache()
 _asianodds_cache_time = {}
 _ao_last_fetch_by_market = {}  # Per-market-type rate limit timers {0:Live, 1:Today, 2:Early}
 _ao_sport_cursor = {0: 0, 1: 0, 2: 0}  # Round-robin index per market type
+_ao_since_cursors = {}  # Explicit delta cursors per cache_key (e.g. "1_0" → cursor)
 _ao_last_match_log = 0  # Throttle match-phase logging
 
 # Cached row data for AO matching (written by run_spy, read by AO phases)
@@ -362,7 +411,7 @@ def _ao_fetch_one_tick():
     Phase A: Non-blocking AO fetch. Makes at most one API call per market type.
     Round-robins through sports. No sleeps — skips if rate limit hasn't elapsed.
     """
-    global _asianodds_cache, _asianodds_cache_time, _ao_sport_cursor
+    global _asianodds_cache, _asianodds_cache_time, _ao_sport_cursor, _ao_since_cursors
 
     if not ASIANODDS_ENABLED:
         return
@@ -412,19 +461,26 @@ def _ao_fetch_one_tick():
         if cache_key in _asianodds_cache and cache_age < rate_limit:
             continue
 
-        # --- MAKE THE API CALL ---
+        # --- MAKE THE API CALL (with explicit delta cursor) ---
+        since_cursor = _ao_since_cursors.get(cache_key)
         try:
-            feed_data = ao_client.get_feeds(sport_id, market_type_id=market_type, odds_format="00")
+            feed_result = ao_client.get_feeds(sport_id, market_type_id=market_type, odds_format="00", since=since_cursor)
             _ao_last_fetch_by_market[market_type] = time.time()
         except Exception as e:
             logger.error(f"AO fetch error {sport_name} mtype={market_type}: {e}")
             _ao_last_fetch_by_market[market_type] = time.time()
             continue
 
+        # --- EXTRACT CURSOR AND SPORTS FROM RESPONSE ---
+        new_cursor = feed_result.get("since")
+        if new_cursor is not None:
+            _ao_since_cursors[cache_key] = new_cursor
+        feed_sports = feed_result.get("sports", [])
+
         # --- PROCESS THE RESPONSE ---
         matches = []
-        if feed_data and isinstance(feed_data, list):
-            for sf in feed_data:
+        if feed_sports and isinstance(feed_sports, list):
+            for sf in feed_sports:
                 if sf and isinstance(sf, dict):
                     matches.extend(sf.get('MatchGames', []) or [])
 
@@ -444,6 +500,28 @@ def _ao_fetch_one_tick():
         filtered = [m for m in matches if m and isinstance(m, dict)
                     and not m.get('WillBeRemoved', False)
                     and m.get('IsActive', True) is not False]
+
+        # --- FRESHNESS WATCHDOG: Drop stale packets ---
+        now_ms = int(time.time() * 1000)
+        stale_count = 0
+        fresh = []
+        for m in filtered:
+            updated_ms = m.get('UpdatedDateTime')
+            if updated_ms is not None:
+                try:
+                    latency_ms = now_ms - int(updated_ms)
+                except (ValueError, TypeError):
+                    latency_ms = 0
+                if latency_ms > ASIANODDS_STALE_THRESHOLD_MS:
+                    stale_count += 1
+                    home_obj = m.get('HomeTeam') or {}
+                    away_obj = m.get('AwayTeam') or {}
+                    h = home_obj.get('Name', '') if isinstance(home_obj, dict) else ''
+                    a = away_obj.get('Name', '') if isinstance(away_obj, dict) else ''
+                    logger.warning(f"Dropped Stale Packet: {h} v {a} Latency {latency_ms/1000:.1f}s")
+                    continue
+            fresh.append(m)
+        filtered = fresh
 
         # Deduplicate: prefer entries with 1X2/ML BookieOdds
         new_entries = {}
@@ -502,7 +580,9 @@ def _ao_fetch_one_tick():
 
         mtype_name = {0: "Live", 1: "Today", 2: "Early"}.get(market_type, str(market_type))
         mode = "SNAPSHOT" if is_full_snapshot else "DELTA"
-        logger.info(f"AO {sport_name} {mtype_name} [{mode}]: {len(matches)} raw, {len(new_entries)} deduped, {len(existing)} cached")
+        cursor_info = f", cursor={new_cursor}" if new_cursor is not None else ""
+        stale_info = f", {stale_count} stale dropped" if stale_count else ""
+        logger.info(f"AO {sport_name} {mtype_name} [{mode}]: {len(matches)} raw, {len(new_entries)} deduped, {len(existing)} cached{cursor_info}{stale_info}")
 
         if is_full_snapshot and matches:
             league_set = set()

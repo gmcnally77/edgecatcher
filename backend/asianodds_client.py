@@ -150,7 +150,7 @@ class AsianOddsClient:
         return True
 
     def get_sports(self):
-        """Get list of available sports."""
+        """Get list of available sports. API returns {"Code": 0, "Data": [...]}."""
         if not self.ensure_authenticated():
             return []
 
@@ -158,8 +158,7 @@ class AsianOddsClient:
         if not data or data.get("Code") != 0:
             return []
 
-        result = data.get("Result") or {}
-        return result.get("Sports", []) if isinstance(result, dict) else []
+        return data.get("Data", [])
 
     def get_leagues(self, sport_id):
         """Get leagues for a sport."""
@@ -182,13 +181,15 @@ class AsianOddsClient:
             sport_id: Sport type ID (1=Soccer, 3=Basketball, etc.)
             market_type_id: 0=Live, 1=Today, 2=Early
             odds_format: "00"=Decimal, "01"=HK, "02"=Malay, "03"=Indo
-            since: Delta cursor from previous response. None = let server manage.
+            since: Delta cursor from previous response. None = full snapshot.
 
         Returns:
-            List of matches with odds
+            dict: {"sports": [...], "since": cursor_value}
         """
+        _empty = {"sports": [], "since": None}
+
         if not self.ensure_authenticated():
-            return []
+            return _empty
 
         params = {
             "sportsType": sport_id,
@@ -203,7 +204,7 @@ class AsianOddsClient:
         data = self._request("GET", "GetFeeds", params)
         if not data:
             logger.warning("GetFeeds failed: No response")
-            return []
+            return _empty
 
         if data.get("Code") != 0:
             code = data.get("Code")
@@ -214,7 +215,7 @@ class AsianOddsClient:
             # Rate limit violation — back off, do NOT re-auth
             if isinstance(code, int) and abs(code) == 810:
                 logger.warning(f"Rate limit hit (Code {code}) — backing off")
-                return []
+                return _empty
 
             # Auto-recover from auth/session errors (any negative code)
             if isinstance(code, int) and code < 0:
@@ -222,16 +223,18 @@ class AsianOddsClient:
                 self.ao_token = None
                 self.ao_key = None
                 if not self.login() or not self.register():
-                    return []
+                    return _empty
                 # Retry once
                 data = self._request("GET", "GetFeeds", params)
                 if not data or data.get("Code") != 0:
-                    return []
+                    return _empty
             else:
-                return []
+                return _empty
 
         result = data.get("Result") or {}
-        return result.get("Sports", []) if isinstance(result, dict) else []
+        sports = result.get("Sports", []) if isinstance(result, dict) else []
+        since_cursor = result.get("Since") if isinstance(result, dict) else None
+        return {"sports": sports, "since": since_cursor}
 
     def get_matches(self, sport_id, market_type_id=2):
         """
