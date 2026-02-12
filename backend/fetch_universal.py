@@ -322,7 +322,6 @@ def has_inplay_markets():
 ASIANODDS_TTL_LIVE = 5     # Exact limit
 ASIANODDS_TTL_TODAY = 10   # Exact limit
 ASIANODDS_TTL_EARLY = 20   # Exact limit
-ASIANODDS_REAUTH_INTERVAL = 120  # Re-auth every 2 mins for fresh full snapshot
 ASIANODDS_CACHE_FILE = os.path.join(CACHE_DIR, "asianodds_cache.json")
 
 def _load_ao_cache():
@@ -350,65 +349,13 @@ def _save_ao_cache(cache):
 
 _asianodds_cache = _load_ao_cache()
 _asianodds_cache_time = {}
-_asianodds_last_reauth = 0
 _ao_last_fetch_by_market = {}  # Per-market-type rate limit timers {0:Live, 1:Today, 2:Early}
 _ao_sport_cursor = {0: 0, 1: 0, 2: 0}  # Round-robin index per market type
-_ao_price_last_seen = {}  # {row_id: timestamp} for staleness clearing
 _ao_last_match_log = 0  # Throttle match-phase logging
-
-# Staleness threshold: clear PIN price if AO hasn't confirmed it in 5 minutes
-AO_PRICE_STALE_SECONDS = 300
 
 # Cached row data for AO matching (written by run_spy, read by AO phases)
 _cached_active_rows = []
 _cached_id_to_row_map = {}
-
-def _ao_reauth_if_needed():
-    """
-    Check if AO re-auth is due. If so, perform it.
-    Called from main loop — fast return if not due.
-    Returns True if auth is good, False if broken.
-    """
-    global _asianodds_cache_time, _asianodds_last_reauth
-
-    if not ASIANODDS_ENABLED:
-        return False
-
-    ao_client = get_asianodds_client()
-    if not ao_client:
-        return False
-
-    now = time.time()
-
-    # Not due yet — fast return
-    if now - _asianodds_last_reauth < ASIANODDS_REAUTH_INTERVAL:
-        return True
-
-    logger.info("AO: Periodic re-auth for fresh snapshot...")
-    ao_client.ao_token = None
-    ao_client.ao_key = None
-    if ao_client.login() and ao_client.register():
-        _asianodds_cache_time = {}  # Force all buckets to re-fetch (next fetch = snapshot)
-        _asianodds_last_reauth = now
-        logger.info("AO: Re-auth OK — next fetch will be full snapshot")
-        # Diagnostic: check leagues
-        try:
-            soccer_leagues = ao_client.get_leagues(1)
-            league_names = [l.get('LeagueName', '') for l in soccer_leagues if isinstance(l, dict)]
-            epl_leagues = [n for n in league_names if 'PREMIER' in n.upper() or 'EPL' in n.upper() or 'ENGLISH' in n.upper()]
-            nba_leagues_check = ao_client.get_leagues(2)
-            nba_names = [l.get('LeagueName', '') for l in nba_leagues_check if isinstance(l, dict)]
-            nba_found = [n for n in nba_names if 'NBA' in n.upper()]
-            logger.info(f"AO LEAGUES: Soccer has {len(league_names)} leagues, EPL-related: {epl_leagues[:5]}")
-            logger.info(f"AO LEAGUES: Basketball has {len(nba_names)} leagues, NBA-related: {nba_found[:5]}")
-        except Exception as e:
-            logger.warning(f"AO GetLeagues diagnostic failed: {e}")
-        return True
-    else:
-        logger.error("AO: Re-auth failed")
-        _asianodds_last_reauth = now  # Don't retry immediately
-        return False
-
 
 def _ao_fetch_one_tick():
     """
@@ -422,6 +369,11 @@ def _ao_fetch_one_tick():
 
     ao_client = get_asianodds_client()
     if not ao_client:
+        return
+
+    # Let the client manage session naturally (re-auths only when tokens missing or stale)
+    if not ao_client.ensure_authenticated():
+        logger.warning("AO: Session not authenticated, skipping tick")
         return
 
     now = time.time()
@@ -564,9 +516,8 @@ def _ao_match_all_cached():
     """
     Phase B: Match ALL cached AO data against DB rows and write PIN prices.
     Runs every tick. Fast — just dict lookups against in-memory cache.
-    Also clears stale prices that AO no longer provides.
     """
-    global _ao_price_last_seen, _ao_last_match_log
+    global _ao_last_match_log
 
     if not ASIANODDS_ENABLED or not _cached_active_rows:
         return
@@ -672,7 +623,6 @@ def _ao_match_all_cached():
                 if pin_price and pin_price > 1.01:
                     row_id = row['id']
                     updates[row_id] = {'price_pinnacle': pin_price}
-                    _ao_price_last_seen[row_id] = now
                     ao_matched_this = True
                     if should_log:
                         src = 'PIN' if 'PIN' in parsed_odds else 'SIN'
@@ -703,34 +653,6 @@ def _ao_match_all_cached():
         for i in range(0, len(data_list), 100):
             supabase.table('market_feed').upsert(data_list[i:i+100], on_conflict='id').execute()
         logger.info(f"AO: {len(updates)} PIN prices written")
-
-    # --- CLEAR STALE PRICES ---
-    # For rows that HAD a PIN price but AO hasn't confirmed it in >300s, null it
-    stale_row_ids = []
-    for row in _cached_active_rows:
-        row_id = row['id']
-        if row_id in updates:
-            continue  # Just confirmed this tick
-        last_seen = _ao_price_last_seen.get(row_id)
-        if last_seen and (now - last_seen) > AO_PRICE_STALE_SECONDS:
-            stale_row_ids.append(row_id)
-            _ao_price_last_seen.pop(row_id, None)  # Reset so we don't clear repeatedly
-
-    if stale_row_ids:
-        stale_data = []
-        for row_id in stale_row_ids:
-            orig_row = _cached_id_to_row_map.get(row_id, {})
-            stale_data.append({
-                'id': row_id,
-                'sport': orig_row.get('sport'),
-                'market_id': orig_row.get('market_id'),
-                'runner_name': orig_row.get('runner_name'),
-                'price_pinnacle': None,
-                'last_updated': datetime.now(timezone.utc).isoformat()
-            })
-        for i in range(0, len(stale_data), 100):
-            supabase.table('market_feed').upsert(stale_data[i:i+100], on_conflict='id').execute()
-        logger.warning(f"AO: Cleared {len(stale_row_ids)} stale PIN prices (>{AO_PRICE_STALE_SECONDS}s)")
 
     if should_log:
         _ao_last_match_log = now
@@ -1067,15 +989,6 @@ def run_spy():
     _cached_active_rows = active_rows
     _cached_id_to_row_map = id_to_row_map
 
-    # Seed _ao_price_last_seen for rows that already have price_pinnacle in DB.
-    # Prevents staleness-clearing from immediately nulling existing prices on startup.
-    for row in active_rows:
-        row_id = row['id']
-        if row_id not in _ao_price_last_seen:
-            orig = id_to_row_map.get(row_id, {})
-            if orig.get('price_pinnacle') is not None:
-                _ao_price_last_seen[row_id] = time.time()
-
     if updates:
         logger.info(f"Spy: Updating {len(updates)} rows...")
         data_list = list(updates.values())
@@ -1322,7 +1235,6 @@ if __name__ == "__main__":
         fetch_betfair()
 
         # AO: Non-blocking two-phase pipeline (no sleeps, max 3 API calls/tick)
-        _ao_reauth_if_needed()
         _ao_fetch_one_tick()
         _ao_match_all_cached()
 

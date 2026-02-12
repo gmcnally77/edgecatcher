@@ -26,6 +26,7 @@ class AsianOddsClient:
         self.service_url = None
         self.last_activity = 0
         self.session_timeout = 240  # 4 minutes (API times out at 5)
+        self.session = requests.Session()  # Persistent TCP connection reuse
 
     def _md5_hash(self, text):
         return hashlib.md5(text.encode()).hexdigest()
@@ -46,9 +47,9 @@ class AsianOddsClient:
 
         try:
             if method == "GET":
-                resp = requests.get(url, params=params, headers=headers, timeout=30)
+                resp = self.session.get(url, params=params, headers=headers, timeout=60)
             else:
-                resp = requests.post(url, params=params, headers=headers, timeout=30)
+                resp = self.session.post(url, params=params, headers=headers, timeout=60)
 
             # Handle BOM in response
             text = resp.text.lstrip('\ufeff')
@@ -110,14 +111,26 @@ class AsianOddsClient:
         logger.info("AsianOdds registration successful")
         return True
 
+    def _login_and_register(self):
+        """Login + Register with a 3-second delay between steps. Returns True on success."""
+        if not self.login():
+            return False
+        time.sleep(3)  # Prevent token race condition
+        if not self.register():
+            return False
+        return True
+
     def ensure_authenticated(self):
-        """Ensure we have a valid session, re-auth if needed."""
+        """Ensure we have a valid session, re-auth if needed. Retries up to 3 times."""
         # Check if we need to re-authenticate
         if not self.ao_token or not self.ao_key:
-            if not self.login():
-                return False
-            if not self.register():
-                return False
+            for attempt in range(1, 4):
+                if self._login_and_register():
+                    return True
+                logger.warning(f"AsianOdds auth attempt {attempt}/3 failed, retrying in 5s...")
+                time.sleep(5)
+            logger.error("AsianOdds auth failed after 3 attempts")
+            return False
 
         # Check if session might be stale (4+ mins since last activity)
         if time.time() - self.last_activity > self.session_timeout:
@@ -126,10 +139,13 @@ class AsianOddsClient:
             if not data or data.get("Code") != 0:
                 # Session expired, re-authenticate
                 logger.info("AsianOdds session expired, re-authenticating...")
-                if not self.login():
-                    return False
-                if not self.register():
-                    return False
+                for attempt in range(1, 4):
+                    if self._login_and_register():
+                        return True
+                    logger.warning(f"AsianOdds re-auth attempt {attempt}/3 failed, retrying in 5s...")
+                    time.sleep(5)
+                logger.error("AsianOdds re-auth failed after 3 attempts")
+                return False
 
         return True
 
