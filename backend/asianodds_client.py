@@ -215,7 +215,7 @@ class AsianOddsClient:
             # Rate limit violation — back off, do NOT re-auth
             if isinstance(code, int) and abs(code) == 810:
                 logger.warning(f"Rate limit hit (Code {code}) — backing off")
-                return _empty
+                return {**_empty, "rate_limited": True}
 
             # Auto-recover from auth/session errors (any negative code)
             if isinstance(code, int) and code < 0:

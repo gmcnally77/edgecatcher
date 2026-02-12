@@ -397,21 +397,118 @@ def _save_ao_cache(cache):
 
 _asianodds_cache = _load_ao_cache()
 _asianodds_cache_time = {}
-_ao_last_fetch_by_market = {}  # Per-market-type rate limit timers {0:Live, 1:Today, 2:Early}
-_ao_sport_cursor = {0: 0, 1: 0, 2: 0}  # Round-robin index per market type
+_ao_last_fetch_by_market = {}  # Per-(sport,market) rate limit: {"2_0": ts, "1_0": ts, ...}
 _ao_since_cursors = {}  # Explicit delta cursors per cache_key (e.g. "1_0" → cursor)
 _ao_last_match_log = 0  # Throttle match-phase logging
+_ao_last_disk_save = 0  # Throttle disk cache saves
 
 # Cached row data for AO matching (written by run_spy, read by AO phases)
 _cached_active_rows = []
 _cached_id_to_row_map = {}
 
+def _maybe_save_ao_cache():
+    """Save AO cache to disk at most once per 30 seconds."""
+    global _ao_last_disk_save
+    now = time.time()
+    if now - _ao_last_disk_save > 30:
+        _save_ao_cache(_asianodds_cache)
+        _ao_last_disk_save = now
+
+
+# --- AO OBSERVABILITY ---
+_ao_metrics = {}  # key: "Sport_Market" -> {polls, total_items, empty_streak, ...}
+_ao_metrics_last_report = 0
+AO_METRICS_REPORT_INTERVAL = 60  # Log freshness summary every 60s
+
+
+def _record_fetch_metrics(sport_name, market_type, raw_count, deduped_count, cache_size, stale_count, cursor):
+    """Record per-(sport, market) fetch metrics for freshness observability."""
+    mtype_name = {0: "Live", 1: "Today", 2: "Early"}.get(market_type, str(market_type))
+    key = f"{sport_name}_{mtype_name}"
+    now = time.time()
+
+    if key not in _ao_metrics:
+        _ao_metrics[key] = {
+            'polls': 0,
+            'total_items': 0,
+            'empty_streak': 0,
+            'max_empty_streak': 0,
+            'stale_dropped': 0,
+            'last_poll_ts': 0,
+            'last_nonempty_ts': 0,
+            'poll_intervals': [],  # last 20 intervals for median/p95
+            'rate_limit_hits': 0,
+        }
+
+    m = _ao_metrics[key]
+    m['polls'] += 1
+    m['total_items'] += raw_count
+    m['stale_dropped'] += stale_count
+
+    if m['last_poll_ts'] > 0:
+        interval = now - m['last_poll_ts']
+        m['poll_intervals'].append(interval)
+        if len(m['poll_intervals']) > 20:
+            m['poll_intervals'] = m['poll_intervals'][-20:]
+
+    m['last_poll_ts'] = now
+
+    if deduped_count == 0:
+        m['empty_streak'] += 1
+        m['max_empty_streak'] = max(m['max_empty_streak'], m['empty_streak'])
+    else:
+        m['empty_streak'] = 0
+        m['last_nonempty_ts'] = now
+
+    # Warn on sustained empty deltas
+    if m['empty_streak'] >= 10:
+        logger.warning(f"FRESHNESS: {key} has {m['empty_streak']} consecutive empty deltas")
+
+
+def _log_freshness_report():
+    """Periodic freshness summary — median poll interval, staleness estimate, empty streaks."""
+    global _ao_metrics_last_report
+    now = time.time()
+    if now - _ao_metrics_last_report < AO_METRICS_REPORT_INTERVAL:
+        return
+    _ao_metrics_last_report = now
+
+    if not _ao_metrics:
+        return
+
+    lines = ["AO FRESHNESS REPORT:"]
+    for key in sorted(_ao_metrics.keys()):
+        m = _ao_metrics[key]
+        intervals = m['poll_intervals']
+        if intervals:
+            sorted_i = sorted(intervals)
+            median = sorted_i[len(sorted_i) // 2]
+            p95_idx = min(len(sorted_i) - 1, int(len(sorted_i) * 0.95))
+            p95 = sorted_i[p95_idx]
+        else:
+            median = 0
+            p95 = 0
+
+        since_nonempty = now - m['last_nonempty_ts'] if m['last_nonempty_ts'] > 0 else -1
+        empty_str = f", empty_streak={m['empty_streak']}" if m['empty_streak'] > 0 else ""
+        stale_str = f", stale_dropped={m['stale_dropped']}" if m['stale_dropped'] > 0 else ""
+        rl_str = f", rate_limits={m['rate_limit_hits']}" if m['rate_limit_hits'] > 0 else ""
+
+        lines.append(
+            f"  {key}: polls={m['polls']}, median_interval={median:.1f}s, "
+            f"p95_interval={p95:.1f}s, since_data={since_nonempty:.0f}s"
+            f"{empty_str}{stale_str}{rl_str}"
+        )
+
+    logger.info("\n".join(lines))
+
+
 def _ao_fetch_one_tick():
     """
-    Phase A: Non-blocking AO fetch. Makes at most one API call per market type.
-    Round-robins through sports. No sleeps — skips if rate limit hasn't elapsed.
+    Phase A: Non-blocking AO fetch. Polls each (sport, market) independently
+    at the API rate limit. No round-robin — all sports get full bandwidth.
     """
-    global _asianodds_cache, _asianodds_cache_time, _ao_sport_cursor, _ao_since_cursors
+    global _asianodds_cache, _asianodds_cache_time, _ao_since_cursors
 
     if not ASIANODDS_ENABLED:
         return
@@ -435,167 +532,161 @@ def _ao_fetch_one_tick():
     ]
 
     for market_type, rate_limit in market_configs:
-        # Rate limit check — skip entirely if not enough time has elapsed
-        last_fetch = _ao_last_fetch_by_market.get(market_type, 0)
-        if now - last_fetch < rate_limit and last_fetch > 0:
-            continue  # Not ready yet — try next tick
-
         # Get eligible sports for this market type (Basketball skips Early)
         if market_type == 2:
             eligible = [(name, sid) for name, sid in sport_items if name != 'Basketball']
         else:
             eligible = list(sport_items)
 
-        if not eligible:
-            continue
+        for sport_name, sport_id in eligible:
+            # Per-(sport, market) rate limit — each sport polls independently
+            rate_key = f"{sport_id}_{market_type}"
+            last_fetch = _ao_last_fetch_by_market.get(rate_key, 0)
+            if now - last_fetch < rate_limit and last_fetch > 0:
+                continue
 
-        # Round-robin: pick the next sport for this market type
-        cursor = _ao_sport_cursor.get(market_type, 0) % len(eligible)
-        sport_name, sport_id = eligible[cursor]
-        _ao_sport_cursor[market_type] = cursor + 1
+            cache_key = f"{sport_id}_{market_type}"
 
-        cache_key = f"{sport_id}_{market_type}"
+            # --- MAKE THE API CALL (with explicit delta cursor) ---
+            # Force since=0 on first fetch per cache_key to get full snapshot.
+            # AO sessions persist across restarts — without this, we only get
+            # deltas that miss leagues (like EPL) whose odds haven't changed.
+            since_cursor = _ao_since_cursors.get(cache_key)
+            if cache_key not in _asianodds_cache_time:
+                since_cursor = 0  # Force full snapshot from AO
+            try:
+                feed_result = ao_client.get_feeds(sport_id, market_type_id=market_type, odds_format="00", since=since_cursor)
+                _ao_last_fetch_by_market[rate_key] = time.time()
+            except Exception as e:
+                logger.error(f"AO fetch error {sport_name} mtype={market_type}: {e}")
+                _ao_last_fetch_by_market[rate_key] = time.time()
+                continue
 
-        # Check cache TTL — if still fresh, skip
-        cache_age = now - _asianodds_cache_time.get(cache_key, 0)
-        if cache_key in _asianodds_cache and cache_age < rate_limit:
-            continue
+            # --- HANDLE RATE LIMIT RESPONSE ---
+            if feed_result.get("rate_limited"):
+                mtype_name = {0: "Live", 1: "Today", 2: "Early"}.get(market_type, str(market_type))
+                mk = f"{sport_name}_{mtype_name}"
+                if mk in _ao_metrics:
+                    _ao_metrics[mk]['rate_limit_hits'] += 1
+                logger.warning(f"AO {sport_name} {mtype_name}: RATE LIMITED — backing off")
+                continue
 
-        # --- MAKE THE API CALL (with explicit delta cursor) ---
-        # Force since=0 on first fetch per cache_key to get full snapshot.
-        # AO sessions persist across restarts — without this, we only get
-        # deltas that miss leagues (like EPL) whose odds haven't changed.
-        since_cursor = _ao_since_cursors.get(cache_key)
-        if cache_key not in _asianodds_cache_time:
-            since_cursor = 0  # Force full snapshot from AO
-        try:
-            feed_result = ao_client.get_feeds(sport_id, market_type_id=market_type, odds_format="00", since=since_cursor)
-            _ao_last_fetch_by_market[market_type] = time.time()
-        except Exception as e:
-            logger.error(f"AO fetch error {sport_name} mtype={market_type}: {e}")
-            _ao_last_fetch_by_market[market_type] = time.time()
-            continue
+            # --- EXTRACT CURSOR AND SPORTS FROM RESPONSE ---
+            new_cursor = feed_result.get("since")
+            if new_cursor is not None:
+                _ao_since_cursors[cache_key] = new_cursor
+            feed_sports = feed_result.get("sports", [])
 
-        # --- EXTRACT CURSOR AND SPORTS FROM RESPONSE ---
-        new_cursor = feed_result.get("since")
-        if new_cursor is not None:
-            _ao_since_cursors[cache_key] = new_cursor
-        feed_sports = feed_result.get("sports", [])
+            # --- PROCESS THE RESPONSE ---
+            matches = []
+            if feed_sports and isinstance(feed_sports, list):
+                for sf in feed_sports:
+                    if sf and isinstance(sf, dict):
+                        matches.extend(sf.get('MatchGames', []) or [])
 
-        # --- PROCESS THE RESPONSE ---
-        matches = []
-        if feed_sports and isinstance(feed_sports, list):
-            for sf in feed_sports:
-                if sf and isinstance(sf, dict):
-                    matches.extend(sf.get('MatchGames', []) or [])
-
-        # Track entries flagged for removal
-        removals = set()
-        for m in matches:
-            if m and isinstance(m, dict) and m.get('WillBeRemoved', False):
-                home_obj = m.get('HomeTeam') or {}
-                away_obj = m.get('AwayTeam') or {}
-                h = home_obj.get('Name', '') if isinstance(home_obj, dict) else ''
-                a = away_obj.get('Name', '') if isinstance(away_obj, dict) else ''
-                if h and a:
-                    league = m.get('LeagueName', '')
-                    removals.add(f"{h}_{a}_{league}")
-
-        # Filter active entries
-        filtered = [m for m in matches if m and isinstance(m, dict)
-                    and not m.get('WillBeRemoved', False)
-                    and m.get('IsActive', True) is not False]
-
-        # --- FRESHNESS WATCHDOG: Drop stale packets ---
-        now_ms = int(time.time() * 1000)
-        stale_count = 0
-        fresh = []
-        for m in filtered:
-            updated_ms = m.get('UpdatedDateTime')
-            if updated_ms is not None:
-                try:
-                    latency_ms = now_ms - int(updated_ms)
-                except (ValueError, TypeError):
-                    latency_ms = 0
-                if latency_ms > ASIANODDS_STALE_THRESHOLD_MS:
-                    stale_count += 1
+            # Track entries flagged for removal
+            removals = set()
+            for m in matches:
+                if m and isinstance(m, dict) and m.get('WillBeRemoved', False):
                     home_obj = m.get('HomeTeam') or {}
                     away_obj = m.get('AwayTeam') or {}
                     h = home_obj.get('Name', '') if isinstance(home_obj, dict) else ''
                     a = away_obj.get('Name', '') if isinstance(away_obj, dict) else ''
-                    logger.warning(f"Dropped Stale Packet: {h} v {a} Latency {latency_ms/1000:.1f}s")
-                    continue
-            fresh.append(m)
-        filtered = fresh
+                    if h and a:
+                        league = m.get('LeagueName', '')
+                        removals.add(f"{h}_{a}_{league}")
 
-        # Deduplicate: prefer entries with 1X2/ML BookieOdds
-        new_entries = {}
-        for m in filtered:
-            home_obj = m.get('HomeTeam') or {}
-            away_obj = m.get('AwayTeam') or {}
-            h = home_obj.get('Name', '') if isinstance(home_obj, dict) else ''
-            a = away_obj.get('Name', '') if isinstance(away_obj, dict) else ''
-            if not h: h = m.get('HomeTeamName', '')
-            if not a: a = m.get('AwayTeamName', '')
-            if h and a:
-                league = m.get('LeagueName', '')
-                cache_entry_key = f"{h}_{a}_{league}"
-                has_odds = False
-                for odds_field in ['FullTimeOneXTwo', 'FullTimeMoneyLine']:
-                    od = m.get(odds_field) or {}
-                    if isinstance(od, dict) and od.get('BookieOdds'):
-                        has_odds = True
-                        break
-                if has_odds or cache_entry_key not in new_entries:
-                    new_entries[cache_entry_key] = m
+            # Filter active entries
+            filtered = [m for m in matches if m and isinstance(m, dict)
+                        and not m.get('WillBeRemoved', False)
+                        and m.get('IsActive', True) is not False]
 
-        # Snapshot vs delta merge
-        is_full_snapshot = cache_key not in _asianodds_cache_time
+            # --- FRESHNESS WATCHDOG: Drop stale packets ---
+            now_ms = int(time.time() * 1000)
+            stale_count = 0
+            fresh = []
+            for m in filtered:
+                updated_ms = m.get('UpdatedDateTime')
+                if updated_ms is not None:
+                    try:
+                        latency_ms = now_ms - int(updated_ms)
+                    except (ValueError, TypeError):
+                        latency_ms = 0
+                    if latency_ms > ASIANODDS_STALE_THRESHOLD_MS:
+                        stale_count += 1
+                        home_obj = m.get('HomeTeam') or {}
+                        away_obj = m.get('AwayTeam') or {}
+                        h = home_obj.get('Name', '') if isinstance(home_obj, dict) else ''
+                        a = away_obj.get('Name', '') if isinstance(away_obj, dict) else ''
+                        logger.warning(f"Dropped Stale Packet: {h} v {a} Latency {latency_ms/1000:.1f}s")
+                        continue
+                fresh.append(m)
+            filtered = fresh
 
-        if is_full_snapshot and new_entries:
-            # Full snapshot — replace cache entirely
-            existing = new_entries
-        else:
-            # Delta — merge new entries into existing cache
-            existing = _asianodds_cache.get(cache_key, {})
-            if not isinstance(existing, dict):
-                existing = {}
-            for remove_key in removals:
-                existing.pop(remove_key, None)
-            # Merge: only overwrite if new entry has 1X2/ML odds
-            # (prevents HDP/O/U deltas from wiping cached PIN prices)
-            for key, match in new_entries.items():
-                new_has_odds = False
-                for odds_field in ['FullTimeOneXTwo', 'FullTimeMoneyLine']:
-                    od = match.get(odds_field) or {}
-                    if isinstance(od, dict) and od.get('BookieOdds'):
-                        new_has_odds = True
-                        break
-                if new_has_odds or key not in existing:
-                    existing[key] = match
+            # Deduplicate: prefer entries with 1X2/ML BookieOdds
+            new_entries = {}
+            for m in filtered:
+                home_obj = m.get('HomeTeam') or {}
+                away_obj = m.get('AwayTeam') or {}
+                h = home_obj.get('Name', '') if isinstance(home_obj, dict) else ''
+                a = away_obj.get('Name', '') if isinstance(away_obj, dict) else ''
+                if not h: h = m.get('HomeTeamName', '')
+                if not a: a = m.get('AwayTeamName', '')
+                if h and a:
+                    league = m.get('LeagueName', '')
+                    cache_entry_key = f"{h}_{a}_{league}"
+                    has_odds = False
+                    for odds_field in ['FullTimeOneXTwo', 'FullTimeMoneyLine']:
+                        od = m.get(odds_field) or {}
+                        if isinstance(od, dict) and od.get('BookieOdds'):
+                            has_odds = True
+                            break
+                    if has_odds or cache_entry_key not in new_entries:
+                        new_entries[cache_entry_key] = m
 
-        _asianodds_cache[cache_key] = existing
+            # Snapshot vs delta merge
+            is_full_snapshot = cache_key not in _asianodds_cache_time
 
-        # FIX: Only set cache_time if we got data. If empty snapshot,
-        # leave unset so next tick retries the snapshot opportunity.
-        if new_entries or not is_full_snapshot:
-            _asianodds_cache_time[cache_key] = time.time()
+            if is_full_snapshot and new_entries:
+                # Full snapshot — replace cache entirely
+                existing = new_entries
+            else:
+                # Delta — merge new entries into existing cache
+                existing = _asianodds_cache.get(cache_key, {})
+                if not isinstance(existing, dict):
+                    existing = {}
+                for remove_key in removals:
+                    existing.pop(remove_key, None)
+                # Merge: only overwrite if new entry has 1X2/ML odds
+                # (prevents HDP/O/U deltas from wiping cached PIN prices)
+                for ek, match in new_entries.items():
+                    new_has_odds = False
+                    for odds_field in ['FullTimeOneXTwo', 'FullTimeMoneyLine']:
+                        od = match.get(odds_field) or {}
+                        if isinstance(od, dict) and od.get('BookieOdds'):
+                            new_has_odds = True
+                            break
+                    if new_has_odds or ek not in existing:
+                        existing[ek] = match
 
-        _save_ao_cache(_asianodds_cache)
+            _asianodds_cache[cache_key] = existing
 
-        mtype_name = {0: "Live", 1: "Today", 2: "Early"}.get(market_type, str(market_type))
-        mode = "SNAPSHOT" if is_full_snapshot else "DELTA"
-        cursor_info = f", cursor={new_cursor}" if new_cursor is not None else ""
-        stale_info = f", {stale_count} stale dropped" if stale_count else ""
-        logger.info(f"AO {sport_name} {mtype_name} [{mode}]: {len(matches)} raw, {len(new_entries)} deduped, {len(existing)} cached{cursor_info}{stale_info}")
+            # Only set cache_time if we got data. If empty snapshot,
+            # leave unset so next tick retries the snapshot opportunity.
+            if new_entries or not is_full_snapshot:
+                _asianodds_cache_time[cache_key] = time.time()
 
-        if matches:
-            league_set = set()
-            for m in matches:
-                if m and isinstance(m, dict):
-                    league_set.add(m.get('LeagueName', '?'))
-            if is_full_snapshot or len(league_set) > 0:
-                logger.info(f"  Leagues in {mtype_name}: {sorted(league_set)}")
+            # --- OBSERVABILITY ---
+            _record_fetch_metrics(sport_name, market_type, len(matches), len(new_entries), len(existing), stale_count, new_cursor)
+
+            mtype_name = {0: "Live", 1: "Today", 2: "Early"}.get(market_type, str(market_type))
+            mode = "SNAPSHOT" if is_full_snapshot else "DELTA"
+            cursor_info = f", cursor={new_cursor}" if new_cursor is not None else ""
+            stale_info = f", {stale_count} stale dropped" if stale_count else ""
+            logger.info(f"AO {sport_name} {mtype_name} [{mode}]: {len(matches)} raw, {len(new_entries)} deduped, {len(existing)} cached{cursor_info}{stale_info}")
+
+    # Periodic freshness report
+    _log_freshness_report()
 
 
 def _ao_match_all_cached():
@@ -639,44 +730,6 @@ def _ao_match_all_cached():
             if should_log:
                 logger.info(f"AO match: No cached data for {sport_name}")
             continue
-
-        # --- DIAGNOSTIC: Cache breakdown per market type ---
-        if should_log:
-            mtype_labels = {0: "Live", 1: "Today", 2: "Early"}
-            for mt in market_types_ordered:
-                ck = f"{sport_id}_{mt}"
-                cached = _asianodds_cache.get(ck, {})
-                if not isinstance(cached, dict):
-                    cached = {}
-                total = len(cached)
-                has_1x2 = 0
-                no_1x2 = 0
-                leagues = set()
-                sample_teams = []
-                for entry in list(cached.values())[:200]:
-                    if not entry or not isinstance(entry, dict):
-                        continue
-                    leagues.add(entry.get('LeagueName', '?'))
-                    has_odds = False
-                    for fld in ['FullTimeOneXTwo', 'FullTimeMoneyLine']:
-                        od = entry.get(fld) or {}
-                        if isinstance(od, dict) and od.get('BookieOdds'):
-                            has_odds = True
-                            break
-                    if has_odds:
-                        has_1x2 += 1
-                    else:
-                        no_1x2 += 1
-                        ho = entry.get('HomeTeam') or {}
-                        ao = entry.get('AwayTeam') or {}
-                        h = ho.get('Name', '') if isinstance(ho, dict) else ''
-                        a = ao.get('Name', '') if isinstance(ao, dict) else ''
-                        if h and a and len(sample_teams) < 3:
-                            sample_teams.append(f"{h} v {a}")
-                lbl = mtype_labels.get(mt, str(mt))
-                logger.info(f"  AO {sport_name} {lbl} cache: {total} entries, {has_1x2} with 1X2, {no_1x2} without | leagues={sorted(leagues)}")
-                if sample_teams:
-                    logger.info(f"    No-1X2 sample: {sample_teams}")
 
         # --- MATCHING LOOP ---
         for match in all_matches:
@@ -1346,7 +1399,11 @@ if __name__ == "__main__":
     
     last_keep_alive = time.time()
 
+    TICK_TARGET = 5  # Target 5s total cycle time
+
     while True:
+        tick_start = time.time()
+
         # SESSION GUARD: Refresh hourly (Running every 6s = Auth Ban)
         if trading.session_token and (time.time() - last_keep_alive > 3600):
             try:
@@ -1355,10 +1412,10 @@ if __name__ == "__main__":
                 logger.info("🔄 Session Keep-Alive Refreshed")
             except:
                 trading.login()
-                
+
         fetch_betfair()
 
-        # AO: Non-blocking two-phase pipeline (no sleeps, max 3 API calls/tick)
+        # AO: Non-blocking per-(sport,market) pipeline
         _ao_fetch_one_tick()
         _ao_match_all_cached()
 
@@ -1382,5 +1439,9 @@ if __name__ == "__main__":
             except Exception as e:
                 logger.error(f"Arb Scan Failed: {e}")
 
-        # RATE LIMIT GUARD: 5s aligns with AO Live rate limit, Today fires every 10s (every other tick)
-        time.sleep(5)
+        # --- DISK CACHE (throttled to once per 30s) ---
+        _maybe_save_ao_cache()
+
+        # Compensate for work time — target 5s total cycle, minimum 0.5s sleep
+        elapsed = time.time() - tick_start
+        time.sleep(max(0.5, TICK_TARGET - elapsed))
