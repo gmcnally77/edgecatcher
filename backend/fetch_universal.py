@@ -483,13 +483,21 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
                                     has_odds = True
                                     break
                             if has_odds or cache_entry_key not in new_entries:
+                                m['_cache_ts'] = now  # timestamp for staleness tracking
                                 new_entries[cache_entry_key] = m
 
                     existing = _asianodds_cache.get(cache_key, {})
                     if not isinstance(existing, dict):
                         existing = {}
 
-                    # Always merge — snapshot overwrites existing entries,
+                    # Prune entries older than 10 minutes — prevents stale prices persisting
+                    stale_cutoff = now - 600
+                    stale_keys = [k for k, v in existing.items()
+                                  if isinstance(v, dict) and v.get('_cache_ts', 0) < stale_cutoff]
+                    for k in stale_keys:
+                        del existing[k]
+
+                    # Merge — snapshot overwrites existing entries,
                     # incremental deltas add/update changed entries
                     for k, v in new_entries.items():
                         existing[k] = v
