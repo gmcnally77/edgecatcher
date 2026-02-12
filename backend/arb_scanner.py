@@ -311,8 +311,8 @@ def run_arb_scan(supabase_client):
                 f"raw +{arb['raw_margin_pct']:.2f}% | net {arb['margin_pct']:.2f}% | vol=£{arb['volume']}"
             )
 
-            # Live Telegram alert — fire on any raw positive gap
-            if arb['raw_margin_pct'] > ARB_RAW_ALERT_MIN and arb['volume'] >= ARB_MIN_VOLUME:
+            # Live Telegram alert — only real arbs (net positive after commission)
+            if arb['is_arb'] and arb['volume'] >= ARB_MIN_VOLUME:
                 lay_stake = calc_lay_stake(100, arb['pin_back'], arb['bf_lay'])
                 pnl = arb['profit_per_100']
                 if arb['is_arb']:
