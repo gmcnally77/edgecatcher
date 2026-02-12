@@ -493,9 +493,23 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
                     if not isinstance(existing, dict):
                         existing = {}
 
-                    # Merge — snapshot overwrites existing entries,
-                    # incremental deltas add/update changed entries
+                    # Merge — delta responses can have multiple entries per
+                    # game (1X2, HDP, O/U) with different GameIds. An HDP
+                    # delta may have empty FullTimeOneXTwo.BookieOdds. We
+                    # must preserve populated BookieOdds from the cached
+                    # entry when the delta's field is empty.
+                    odds_fields = ['FullTimeOneXTwo', 'FullTimeMoneyLine',
+                                   'FullTimeHdp', 'FullTimeOu',
+                                   'HalfTimeHdp', 'HalfTimeOu', 'HalfTimeOneXTwo']
                     for k, v in new_entries.items():
+                        old = existing.get(k)
+                        if old and isinstance(old, dict):
+                            for field in odds_fields:
+                                old_od = old.get(field)
+                                new_od = v.get(field)
+                                if (isinstance(old_od, dict) and old_od.get('BookieOdds')
+                                        and isinstance(new_od, dict) and not new_od.get('BookieOdds')):
+                                    v[field] = old_od
                         existing[k] = v
 
                     _asianodds_cache[cache_key] = existing
