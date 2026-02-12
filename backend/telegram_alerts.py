@@ -235,16 +235,26 @@ def run_alert_cycle(supabase_client):
         source = "PIN" if drop['type'] == 'PIN' else "Exchange"
         drop_pct_display = round(drop_pct * 100, 1)
         event_name = row.get('event_name', '')
-        sport = row.get('sport', 'NBA')
-        event_line = f"<b>{event_name}</b>\n" if event_name else ""
+        sport = row.get('sport', '')
+
+        sport_emoji = {
+            'basketball': '🏀', 'nba': '🏀',
+            'soccer': '⚽', 'football': '⚽',
+            'mma': '🥊', 'ufc': '🥊',
+            'tennis': '🎾',
+            'baseball': '⚾',
+            'hockey': '🏒', 'nhl': '🏒',
+            'rugby': '🏉',
+            'cricket': '🏏',
+        }.get(sport.lower(), '📉')
 
         msg = (
-            f"<b>STEAMER: {runner_name}</b>\n"
-            f"{event_line}\n"
-            f"{source} dropped {drop_pct_display}% in ~{STEAMER_WINDOW_TICKS * 5}s\n"
+            f"{sport_emoji} <b>Steamer: {runner_name}</b>\n"
             f"Was: {drop['old']:.3f}  Now: {drop['new']:.3f}\n"
             f"\n"
-            f"Sport: {sport}\n"
+            f"{event_name}\n"
+            f"\n"
+            f"{source} dropped {drop_pct_display}% in ~{STEAMER_WINDOW_TICKS * 5}s\n"
             f"Kick-off: {start_time_str}"
         )
 
