@@ -13,7 +13,7 @@ ALERT_MIN_VOLUME = float(os.getenv("ALERT_MIN_VOLUME", "200.0"))
 ALERT_COOLDOWN_SECONDS = int(os.getenv("ALERT_COOLDOWN_SECONDS", "600"))
 
 # Steamer detection config
-STEAMER_DROP_PCT = float(os.getenv("STEAMER_DROP_PCT", "0.02"))  # 2% drop threshold
+STEAMER_DROP_PCT = float(os.getenv("STEAMER_DROP_PCT", "0.05"))  # 5% drop threshold
 STEAMER_WINDOW_TICKS = int(os.getenv("STEAMER_WINDOW_TICKS", "6"))  # ~30s at 5s ticks
 
 # Guard: Only run logic if this mode is active
