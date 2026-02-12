@@ -828,9 +828,10 @@ def _ao_match_all_cached():
 
         if should_log:
             sport_rows = [r for r in _cached_active_rows if r['sport'] == sport_name]
-            logger.info(f"AO {sport_name}: {ao_has_pin} PIN, {ao_skipped_no_pin} no-PIN, {len(sport_rows)} DB rows")
+            matched_count = ao_has_pin - len(ao_unmatched)
+            logger.info(f"AO {sport_name}: {matched_count}/{ao_has_pin} PIN matched, {len(sport_rows)} DB rows")
             if ao_unmatched:
-                logger.warning(f"AO {sport_name}: {len(ao_unmatched)} unmatched: {ao_unmatched[:5]}")
+                logger.debug(f"AO {sport_name}: {len(ao_unmatched)} unmatched (non-target leagues): {ao_unmatched[:5]}")
 
     # --- WRITE PIN PRICES TO DB ---
     if updates:
