@@ -556,10 +556,10 @@ def _ao_fetch_one_tick():
                 since_cursor = 0  # Force full snapshot from AO
             try:
                 feed_result = ao_client.get_feeds(sport_id, market_type_id=market_type, odds_format="00", since=since_cursor)
-                _ao_last_fetch_by_market[rate_key] = time.time()
+                _ao_last_fetch_by_market[rate_key] = now  # Use consistent timestamp for rate checks
             except Exception as e:
                 logger.error(f"AO fetch error {sport_name} mtype={market_type}: {e}")
-                _ao_last_fetch_by_market[rate_key] = time.time()
+                _ao_last_fetch_by_market[rate_key] = now
                 continue
 
             # --- HANDLE RATE LIMIT RESPONSE ---
