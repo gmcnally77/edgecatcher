@@ -414,6 +414,18 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
             _asianodds_cache_time = {}  # Force all buckets to re-fetch
             _asianodds_last_reauth = now
             logger.info("AO: Re-auth OK — next fetch will be full snapshot")
+            # Diagnostic: check what leagues AO offers for Soccer
+            try:
+                soccer_leagues = ao_client.get_leagues(1)  # 1 = Football/Soccer
+                league_names = [l.get('LeagueName', '') for l in soccer_leagues if isinstance(l, dict)]
+                epl_leagues = [n for n in league_names if 'PREMIER' in n.upper() or 'EPL' in n.upper() or 'ENGLISH' in n.upper()]
+                nba_leagues_check = ao_client.get_leagues(2)  # 2 = Basketball
+                nba_names = [l.get('LeagueName', '') for l in nba_leagues_check if isinstance(l, dict)]
+                nba_found = [n for n in nba_names if 'NBA' in n.upper()]
+                logger.info(f"AO LEAGUES: Soccer has {len(league_names)} leagues, EPL-related: {epl_leagues[:5]}")
+                logger.info(f"AO LEAGUES: Basketball has {len(nba_names)} leagues, NBA-related: {nba_found[:5]}")
+            except Exception as e:
+                logger.warning(f"AO GetLeagues diagnostic failed: {e}")
         else:
             logger.error("AO: Re-auth failed")
             _asianodds_last_reauth = now
@@ -544,6 +556,13 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
                     mtype_name = {0: "Live", 1: "Today", 2: "Early"}.get(market_type, str(market_type))
                     mode = "SNAPSHOT" if is_full_snapshot else "DELTA"
                     logger.info(f"AsianOdds {sport_name} {mtype_name} [{mode}]: {len(matches)} raw, {len(new_entries)} deduped, {len(existing)} total cached")
+                    # Diagnostic: log unique league names from snapshot to identify what AO has
+                    if is_full_snapshot and matches:
+                        league_set = set()
+                        for m in matches:
+                            if m and isinstance(m, dict):
+                                league_set.add(m.get('LeagueName', '?'))
+                        logger.info(f"  Leagues in {mtype_name}: {sorted(league_set)}")
 
             # Build all_matches: Early first, Today second, Live LAST.
             # "Last write wins" in the matching loop, so Live's fresh
@@ -1002,8 +1021,8 @@ def run_spy():
                             return o.get('price')
                     return None
 
-                # PIN price now sourced exclusively from AsianOdds (live feed)
-                # The Odds API Pinnacle is stale/delayed — do not write it
+                # PIN price sourced from AsianOdds (real-time feed)
+                # The Odds API Pinnacle is delayed — do not write it
 
                 price_ladbrokes = find_price(get_h2h(ladbrokes_book), raw_name)
                 if price_ladbrokes is not None:

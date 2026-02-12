@@ -178,6 +178,8 @@ class AsianOddsClient:
             "sportsType": sport_id,
             "marketTypeId": market_type_id,
             "oddsFormat": odds_format,
+            "bookies": "ALL",
+            "leagues": "ALL",
         }
         if since is not None:
             params["since"] = since
