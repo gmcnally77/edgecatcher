@@ -462,7 +462,10 @@ def _ao_fetch_one_tick():
             continue
 
         # --- MAKE THE API CALL (with explicit delta cursor) ---
+        # Only pass cursor if we've received data before; otherwise force snapshot
         since_cursor = _ao_since_cursors.get(cache_key)
+        if cache_key not in _asianodds_cache_time:
+            since_cursor = None  # Force full snapshot — haven't received data yet
         try:
             feed_result = ao_client.get_feeds(sport_id, market_type_id=market_type, odds_format="00", since=since_cursor)
             _ao_last_fetch_by_market[market_type] = time.time()
@@ -584,12 +587,13 @@ def _ao_fetch_one_tick():
         stale_info = f", {stale_count} stale dropped" if stale_count else ""
         logger.info(f"AO {sport_name} {mtype_name} [{mode}]: {len(matches)} raw, {len(new_entries)} deduped, {len(existing)} cached{cursor_info}{stale_info}")
 
-        if is_full_snapshot and matches:
+        if matches:
             league_set = set()
             for m in matches:
                 if m and isinstance(m, dict):
                     league_set.add(m.get('LeagueName', '?'))
-            logger.info(f"  Leagues in {mtype_name}: {sorted(league_set)}")
+            if is_full_snapshot or len(league_set) > 0:
+                logger.info(f"  Leagues in {mtype_name}: {sorted(league_set)}")
 
 
 def _ao_match_all_cached():
@@ -633,6 +637,44 @@ def _ao_match_all_cached():
             if should_log:
                 logger.info(f"AO match: No cached data for {sport_name}")
             continue
+
+        # --- DIAGNOSTIC: Cache breakdown per market type ---
+        if should_log:
+            mtype_labels = {0: "Live", 1: "Today", 2: "Early"}
+            for mt in market_types_ordered:
+                ck = f"{sport_id}_{mt}"
+                cached = _asianodds_cache.get(ck, {})
+                if not isinstance(cached, dict):
+                    cached = {}
+                total = len(cached)
+                has_1x2 = 0
+                no_1x2 = 0
+                leagues = set()
+                sample_teams = []
+                for entry in list(cached.values())[:200]:
+                    if not entry or not isinstance(entry, dict):
+                        continue
+                    leagues.add(entry.get('LeagueName', '?'))
+                    has_odds = False
+                    for fld in ['FullTimeOneXTwo', 'FullTimeMoneyLine']:
+                        od = entry.get(fld) or {}
+                        if isinstance(od, dict) and od.get('BookieOdds'):
+                            has_odds = True
+                            break
+                    if has_odds:
+                        has_1x2 += 1
+                    else:
+                        no_1x2 += 1
+                        ho = entry.get('HomeTeam') or {}
+                        ao = entry.get('AwayTeam') or {}
+                        h = ho.get('Name', '') if isinstance(ho, dict) else ''
+                        a = ao.get('Name', '') if isinstance(ao, dict) else ''
+                        if h and a and len(sample_teams) < 3:
+                            sample_teams.append(f"{h} v {a}")
+                lbl = mtype_labels.get(mt, str(mt))
+                logger.info(f"  AO {sport_name} {lbl} cache: {total} entries, {has_1x2} with 1X2, {no_1x2} without | leagues={sorted(leagues)}")
+                if sample_teams:
+                    logger.info(f"    No-1X2 sample: {sample_teams}")
 
         # --- MATCHING LOOP ---
         for match in all_matches:
