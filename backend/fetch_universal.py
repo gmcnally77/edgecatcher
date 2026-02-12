@@ -452,11 +452,11 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
                     if elapsed < ttl and last_fetch > 0:
                         time.sleep(ttl - elapsed)
 
-                    # Pass since=0 to force full snapshot every call.
-                    # Per API docs, without since, 2nd+ calls return only
-                    # deltas — and re-auth may not reset the delta tracker.
+                    # Don't pass since — let server manage delta tracking.
+                    # First call after re-auth = full snapshot, subsequent = deltas.
+                    # Re-auth every 2 min resets delta tracker for fresh snapshots.
                     feed_data = ao_client.get_feeds(sport_id, market_type_id=market_type,
-                                                    odds_format="00", since=0)
+                                                    odds_format="00")
                     _ao_last_fetch_by_market[market_type] = time.time()
 
                     matches = []
@@ -464,6 +464,18 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
                         for sf in feed_data:
                             if sf and isinstance(sf, dict):
                                 matches.extend(sf.get('MatchGames', []) or [])
+
+                    # Track entries flagged for removal (delta tells us to drop them)
+                    removals = set()
+                    for m in matches:
+                        if m and isinstance(m, dict) and m.get('WillBeRemoved', False):
+                            home_obj = m.get('HomeTeam') or {}
+                            away_obj = m.get('AwayTeam') or {}
+                            h = home_obj.get('Name', '') if isinstance(home_obj, dict) else ''
+                            a = away_obj.get('Name', '') if isinstance(away_obj, dict) else ''
+                            if h and a:
+                                league = m.get('LeagueName', '')
+                                removals.add(f"{h}_{a}_{league}")
 
                     # Filter out None, removed, and inactive entries
                     filtered = [m for m in matches if m and isinstance(m, dict)
@@ -495,15 +507,34 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
                             if has_odds or cache_entry_key not in new_entries:
                                 new_entries[cache_entry_key] = m
 
-                    # since=0 gives us full snapshot — replace cache bucket
-                    # entirely instead of merging into potentially stale data.
-                    # Fall back to old cache only if API returned empty.
-                    if new_entries:
+                    # First fetch after re-auth = full snapshot → replace cache.
+                    # Subsequent fetches = deltas → merge into cache.
+                    # This prevents delta responses from wiping cached EPL/NBA
+                    # entries that haven't changed (the core stale-price bug).
+                    is_full_snapshot = cache_key not in _asianodds_cache_time
+
+                    if is_full_snapshot and new_entries:
+                        # Full snapshot — replace cache entirely
                         existing = new_entries
                     else:
+                        # Delta — merge new entries into existing cache
                         existing = _asianodds_cache.get(cache_key, {})
                         if not isinstance(existing, dict):
                             existing = {}
+                        # Remove entries flagged for removal
+                        for remove_key in removals:
+                            existing.pop(remove_key, None)
+                        # Merge: only overwrite if new entry has 1X2/ML odds
+                        # (prevents HDP/O/U deltas from wiping cached PIN prices)
+                        for key, match in new_entries.items():
+                            new_has_odds = False
+                            for odds_field in ['FullTimeOneXTwo', 'FullTimeMoneyLine']:
+                                od = match.get(odds_field) or {}
+                                if isinstance(od, dict) and od.get('BookieOdds'):
+                                    new_has_odds = True
+                                    break
+                            if new_has_odds or key not in existing:
+                                existing[key] = match
 
                     _asianodds_cache[cache_key] = existing
                     _asianodds_cache_time[cache_key] = time.time()
@@ -511,7 +542,8 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
                     bucket_matches[market_type] = list(existing.values())
 
                     mtype_name = {0: "Live", 1: "Today", 2: "Early"}.get(market_type, str(market_type))
-                    logger.info(f"AsianOdds {sport_name} {mtype_name}: {len(filtered)} fresh, {len(existing)} total cached")
+                    mode = "SNAPSHOT" if is_full_snapshot else "DELTA"
+                    logger.info(f"AsianOdds {sport_name} {mtype_name} [{mode}]: {len(matches)} raw, {len(new_entries)} deduped, {len(existing)} total cached")
 
             # Build all_matches: Early first, Today second, Live LAST.
             # "Last write wins" in the matching loop, so Live's fresh
