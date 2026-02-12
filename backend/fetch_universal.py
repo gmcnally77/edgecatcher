@@ -1027,7 +1027,8 @@ def run_snapshot_cycle(active_data):
             "back_price": back,
             "lay_price": lay,
             "mid_price": mid,
-            "volume": float(row.get('volume') or 0)
+            "volume": float(row.get('volume') or 0),
+            "price_pinnacle": float(row.get('price_pinnacle') or 0) or None
         })
 
     if snapshot_rows:
