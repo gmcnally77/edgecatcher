@@ -426,7 +426,11 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
             # Fetch Live, Today, and Early with separate TTLs
             # NBA only appears in Live market (market_type=1) — not in Today/Early
             # EPL matches near kickoff also move to Live before they start
-            all_matches = []
+            # Collect matches per bucket so we can control final ordering.
+            # Live must come LAST in all_matches so its fresh prices win
+            # "last write wins" in the matching loop (prevents stale Today/Early
+            # cache entries from overwriting fresh Live prices).
+            bucket_matches = {}  # {market_type: [match_dicts]}
 
             # Skip Early for Basketball — NBA is never in Early market
             if sport_name == 'Basketball':
@@ -440,7 +444,7 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
                 if cache_key in _asianodds_cache and cache_age < ttl:
                     # Use cached data (dict keyed by home_away)
                     cached = _asianodds_cache[cache_key] or {}
-                    all_matches.extend([m for m in cached.values() if m and isinstance(m, dict)])
+                    bucket_matches[market_type] = [m for m in cached.values() if m and isinstance(m, dict)]
                 else:
                     # Fetch fresh — rate limits are per market type (Live/Today/Early)
                     last_fetch = _ao_last_fetch_by_market.get(market_type, 0)
@@ -497,10 +501,17 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
                     _asianodds_cache[cache_key] = existing
                     _asianodds_cache_time[cache_key] = time.time()
                     _save_ao_cache(_asianodds_cache)  # persist to disk
-                    all_matches.extend(existing.values())
+                    bucket_matches[market_type] = list(existing.values())
 
                     mtype_name = {0: "Live", 1: "Today", 2: "Early"}.get(market_type, str(market_type))
                     logger.info(f"AsianOdds {sport_name} {mtype_name}: {len(filtered)} fresh, {len(existing)} total cached")
+
+            # Build all_matches: Early first, Today second, Live LAST.
+            # "Last write wins" in the matching loop, so Live's fresh
+            # prices take priority over stale Today/Early cache entries.
+            all_matches = []
+            for mt in sorted(bucket_matches.keys(), reverse=True):
+                all_matches.extend(bucket_matches[mt])
 
             feeds = [{'MatchGames': all_matches}] if all_matches else []
 
