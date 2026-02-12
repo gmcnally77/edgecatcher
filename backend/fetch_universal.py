@@ -1093,8 +1093,12 @@ def run_spy():
                             return o.get('price')
                     return None
 
-                # PIN price sourced from AsianOdds (real-time feed)
-                # The Odds API Pinnacle is delayed — do not write it
+                # PIN price: write Odds API Pinnacle as baseline.
+                # AO matching phase overwrites with real-time data for sports it covers (NBA).
+                # For sports AO doesn't carry (EPL, UFC), this is the only source.
+                price_pin = find_price(get_h2h(pin_book), raw_name)
+                if price_pin is not None:
+                    updates[row_id]['price_pinnacle'] = price_pin
 
                 price_ladbrokes = find_price(get_h2h(ladbrokes_book), raw_name)
                 if price_ladbrokes is not None:
