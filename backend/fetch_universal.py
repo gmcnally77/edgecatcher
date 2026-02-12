@@ -411,9 +411,10 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
         ao_client.ao_token = None
         ao_client.ao_key = None
         if ao_client.login() and ao_client.register():
+            _asianodds_cache = {}       # Clear stale cached entries
             _asianodds_cache_time = {}  # Force all buckets to re-fetch
             _asianodds_last_reauth = now
-            logger.info("AO: Re-auth OK — next fetch will be full snapshot")
+            logger.info("AO: Re-auth OK — cache cleared, next fetch will be full snapshot")
         else:
             logger.error("AO: Re-auth failed")
             _asianodds_last_reauth = now
