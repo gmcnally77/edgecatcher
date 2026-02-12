@@ -483,7 +483,6 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
                                     has_odds = True
                                     break
                             if has_odds or cache_entry_key not in new_entries:
-                                m['_market_type'] = market_type  # 0=Live, 1=Today, 2=Early
                                 new_entries[cache_entry_key] = m
 
                     existing = _asianodds_cache.get(cache_key, {})
@@ -502,42 +501,6 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
 
                     mtype_name = {0: "Live", 1: "Today", 2: "Early"}.get(market_type, str(market_type))
                     logger.info(f"AsianOdds {sport_name} {mtype_name}: {len(filtered)} fresh, {len(existing)} total cached")
-
-            # Deduplicate matches across market buckets (Live/Today/Early).
-            # When a match moves from Today→Live, it can exist in both caches.
-            # Prefer Live (market_type=0) over Today (1) over Early (2)
-            # because Live has the freshest prices for near-kickoff matches.
-            deduped = {}
-            for m in all_matches:
-                home_obj = m.get('HomeTeam') or {}
-                away_obj = m.get('AwayTeam') or {}
-                h = home_obj.get('Name', '') if isinstance(home_obj, dict) else m.get('HomeTeamName', '')
-                a = away_obj.get('Name', '') if isinstance(away_obj, dict) else m.get('AwayTeamName', '')
-                if not h or not a:
-                    continue
-                key = f"{h}_{a}"
-                has_odds = False
-                for field in ['FullTimeOneXTwo', 'FullTimeMoneyLine']:
-                    od = m.get(field) or {}
-                    if isinstance(od, dict) and od.get('BookieOdds'):
-                        has_odds = True
-                        break
-                existing_entry = deduped.get(key)
-                if not existing_entry:
-                    deduped[key] = m
-                elif has_odds:
-                    existing_has_odds = any(
-                        isinstance((existing_entry.get(f) or {}), dict)
-                        and (existing_entry.get(f) or {}).get('BookieOdds')
-                        for f in ['FullTimeOneXTwo', 'FullTimeMoneyLine']
-                    )
-                    if not existing_has_odds:
-                        # New entry has odds, existing doesn't → take new
-                        deduped[key] = m
-                    elif m.get('_market_type', 99) < existing_entry.get('_market_type', 99):
-                        # Both have odds → prefer Live (lower _market_type)
-                        deduped[key] = m
-            all_matches = list(deduped.values())
 
             feeds = [{'MatchGames': all_matches}] if all_matches else []
 
