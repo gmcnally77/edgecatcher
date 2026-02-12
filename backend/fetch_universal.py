@@ -452,7 +452,11 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
                     if elapsed < ttl and last_fetch > 0:
                         time.sleep(ttl - elapsed)
 
-                    feed_data = ao_client.get_feeds(sport_id, market_type_id=market_type, odds_format="00")
+                    # Pass since=0 to force full snapshot every call.
+                    # Per API docs, without since, 2nd+ calls return only
+                    # deltas — and re-auth may not reset the delta tracker.
+                    feed_data = ao_client.get_feeds(sport_id, market_type_id=market_type,
+                                                    odds_format="00", since=0)
                     _ao_last_fetch_by_market[market_type] = time.time()
 
                     matches = []
@@ -466,7 +470,9 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
                                 and not m.get('WillBeRemoved', False)
                                 and m.get('IsActive', True) is not False]
 
-                    # Build new entries dict from this fetch
+                    # Build new entries dict from this fetch.
+                    # Same match appears multiple times (1X2, HDP, O/U) with
+                    # different GameIds. Prefer entries with 1X2/ML BookieOdds.
                     new_entries = {}
                     for m in filtered:
                         home_obj = m.get('HomeTeam') or {}
@@ -489,28 +495,15 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
                             if has_odds or cache_entry_key not in new_entries:
                                 new_entries[cache_entry_key] = m
 
-                    existing = _asianodds_cache.get(cache_key, {})
-                    if not isinstance(existing, dict):
-                        existing = {}
-
-                    # Merge — delta responses can have multiple entries per
-                    # game (1X2, HDP, O/U) with different GameIds. An HDP
-                    # delta may have empty FullTimeOneXTwo.BookieOdds. We
-                    # must preserve populated BookieOdds from the cached
-                    # entry when the delta's field is empty.
-                    odds_fields = ['FullTimeOneXTwo', 'FullTimeMoneyLine',
-                                   'FullTimeHdp', 'FullTimeOu',
-                                   'HalfTimeHdp', 'HalfTimeOu', 'HalfTimeOneXTwo']
-                    for k, v in new_entries.items():
-                        old = existing.get(k)
-                        if old and isinstance(old, dict):
-                            for field in odds_fields:
-                                old_od = old.get(field)
-                                new_od = v.get(field)
-                                if (isinstance(old_od, dict) and old_od.get('BookieOdds')
-                                        and isinstance(new_od, dict) and not new_od.get('BookieOdds')):
-                                    v[field] = old_od
-                        existing[k] = v
+                    # since=0 gives us full snapshot — replace cache bucket
+                    # entirely instead of merging into potentially stale data.
+                    # Fall back to old cache only if API returned empty.
+                    if new_entries:
+                        existing = new_entries
+                    else:
+                        existing = _asianodds_cache.get(cache_key, {})
+                        if not isinstance(existing, dict):
+                            existing = {}
 
                     _asianodds_cache[cache_key] = existing
                     _asianodds_cache_time[cache_key] = time.time()

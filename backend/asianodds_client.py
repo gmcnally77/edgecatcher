@@ -158,7 +158,7 @@ class AsianOddsClient:
         result = data.get("Result") or {}
         return result.get("Leagues", []) if isinstance(result, dict) else []
 
-    def get_feeds(self, sport_id, market_type_id=1, odds_format="00"):
+    def get_feeds(self, sport_id, market_type_id=1, odds_format="00", since=0):
         """
         Get odds feeds for a sport.
 
@@ -166,6 +166,7 @@ class AsianOddsClient:
             sport_id: Sport type ID (1=Soccer, 3=Basketball, etc.)
             market_type_id: 0=Live, 1=Today, 2=Early
             odds_format: "00"=Decimal, "01"=HK, "02"=Malay, "03"=Indo
+            since: Delta switch — 0 forces full snapshot, omit for deltas
 
         Returns:
             List of matches with odds
@@ -176,7 +177,8 @@ class AsianOddsClient:
         params = {
             "sportsType": sport_id,
             "marketTypeId": market_type_id,
-            "oddsFormat": odds_format
+            "oddsFormat": odds_format,
+            "since": since
         }
 
         data = self._request("GET", "GetFeeds", params)
