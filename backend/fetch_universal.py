@@ -502,6 +502,30 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
                     mtype_name = {0: "Live", 1: "Today", 2: "Early"}.get(market_type, str(market_type))
                     logger.info(f"AsianOdds {sport_name} {mtype_name}: {len(filtered)} fresh, {len(existing)} total cached")
 
+            # Deduplicate matches across market buckets (Live/Today/Early).
+            # When a match moves from Today→Live, stale Today cache entry can
+            # overwrite fresh Live price. Prefer entries with BookieOdds.
+            deduped = {}
+            for m in all_matches:
+                home_obj = m.get('HomeTeam') or {}
+                away_obj = m.get('AwayTeam') or {}
+                h = home_obj.get('Name', '') if isinstance(home_obj, dict) else m.get('HomeTeamName', '')
+                a = away_obj.get('Name', '') if isinstance(away_obj, dict) else m.get('AwayTeamName', '')
+                if not h or not a:
+                    continue
+                key = f"{h}_{a}"
+                # Keep entry that has BookieOdds; if both have it, later one wins
+                has_odds = False
+                for field in ['FullTimeOneXTwo', 'FullTimeMoneyLine']:
+                    od = m.get(field) or {}
+                    if isinstance(od, dict) and od.get('BookieOdds'):
+                        has_odds = True
+                        break
+                existing = deduped.get(key)
+                if not existing or has_odds:
+                    deduped[key] = m
+            all_matches = list(deduped.values())
+
             feeds = [{'MatchGames': all_matches}] if all_matches else []
 
             if not feeds:
