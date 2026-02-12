@@ -352,360 +352,388 @@ _asianodds_cache = _load_ao_cache()
 _asianodds_cache_time = {}
 _asianodds_last_reauth = 0
 _ao_last_fetch_by_market = {}  # Per-market-type rate limit timers {0:Live, 1:Today, 2:Early}
+_ao_sport_cursor = {0: 0, 1: 0, 2: 0}  # Round-robin index per market type
+_ao_price_last_seen = {}  # {row_id: timestamp} for staleness clearing
+_ao_last_match_log = 0  # Throttle match-phase logging
 
-# Cached row data for independent AO cycle
+# Staleness threshold: clear PIN price if AO hasn't confirmed it in 5 minutes
+AO_PRICE_STALE_SECONDS = 300
+
+# Cached row data for AO matching (written by run_spy, read by AO phases)
 _cached_active_rows = []
 _cached_id_to_row_map = {}
 
-def run_ao_cycle():
-    """Independent AO price cycle — runs on every main loop tick (~6s)."""
+def _ao_reauth_if_needed():
+    """
+    Check if AO re-auth is due. If so, perform it.
+    Called from main loop — fast return if not due.
+    Returns True if auth is good, False if broken.
+    """
+    global _asianodds_cache_time, _asianodds_last_reauth
+
+    if not ASIANODDS_ENABLED:
+        return False
+
+    ao_client = get_asianodds_client()
+    if not ao_client:
+        return False
+
+    now = time.time()
+
+    # Not due yet — fast return
+    if now - _asianodds_last_reauth < ASIANODDS_REAUTH_INTERVAL:
+        return True
+
+    logger.info("AO: Periodic re-auth for fresh snapshot...")
+    ao_client.ao_token = None
+    ao_client.ao_key = None
+    if ao_client.login() and ao_client.register():
+        _asianodds_cache_time = {}  # Force all buckets to re-fetch (next fetch = snapshot)
+        _asianodds_last_reauth = now
+        logger.info("AO: Re-auth OK — next fetch will be full snapshot")
+        # Diagnostic: check leagues
+        try:
+            soccer_leagues = ao_client.get_leagues(1)
+            league_names = [l.get('LeagueName', '') for l in soccer_leagues if isinstance(l, dict)]
+            epl_leagues = [n for n in league_names if 'PREMIER' in n.upper() or 'EPL' in n.upper() or 'ENGLISH' in n.upper()]
+            nba_leagues_check = ao_client.get_leagues(2)
+            nba_names = [l.get('LeagueName', '') for l in nba_leagues_check if isinstance(l, dict)]
+            nba_found = [n for n in nba_names if 'NBA' in n.upper()]
+            logger.info(f"AO LEAGUES: Soccer has {len(league_names)} leagues, EPL-related: {epl_leagues[:5]}")
+            logger.info(f"AO LEAGUES: Basketball has {len(nba_names)} leagues, NBA-related: {nba_found[:5]}")
+        except Exception as e:
+            logger.warning(f"AO GetLeagues diagnostic failed: {e}")
+        return True
+    else:
+        logger.error("AO: Re-auth failed")
+        _asianodds_last_reauth = now  # Don't retry immediately
+        return False
+
+
+def _ao_fetch_one_tick():
+    """
+    Phase A: Non-blocking AO fetch. Makes at most one API call per market type.
+    Round-robins through sports. No sleeps — skips if rate limit hasn't elapsed.
+    """
+    global _asianodds_cache, _asianodds_cache_time, _ao_sport_cursor
+
+    if not ASIANODDS_ENABLED:
+        return
+
+    ao_client = get_asianodds_client()
+    if not ao_client:
+        return
+
+    now = time.time()
+    sport_items = list(ASIANODDS_SPORT_MAP.items())  # [('Basketball',2), ('Soccer',1), ('MMA',9)]
+
+    market_configs = [
+        (0, ASIANODDS_TTL_LIVE),    # Live: 5s
+        (1, ASIANODDS_TTL_TODAY),   # Today: 10s
+        (2, ASIANODDS_TTL_EARLY),   # Early: 20s
+    ]
+
+    for market_type, rate_limit in market_configs:
+        # Rate limit check — skip entirely if not enough time has elapsed
+        last_fetch = _ao_last_fetch_by_market.get(market_type, 0)
+        if now - last_fetch < rate_limit and last_fetch > 0:
+            continue  # Not ready yet — try next tick
+
+        # Get eligible sports for this market type (Basketball skips Early)
+        if market_type == 2:
+            eligible = [(name, sid) for name, sid in sport_items if name != 'Basketball']
+        else:
+            eligible = list(sport_items)
+
+        if not eligible:
+            continue
+
+        # Round-robin: pick the next sport for this market type
+        cursor = _ao_sport_cursor.get(market_type, 0) % len(eligible)
+        sport_name, sport_id = eligible[cursor]
+        _ao_sport_cursor[market_type] = cursor + 1
+
+        cache_key = f"{sport_id}_{market_type}"
+
+        # Check cache TTL — if still fresh, skip
+        cache_age = now - _asianodds_cache_time.get(cache_key, 0)
+        if cache_key in _asianodds_cache and cache_age < rate_limit:
+            continue
+
+        # --- MAKE THE API CALL ---
+        try:
+            feed_data = ao_client.get_feeds(sport_id, market_type_id=market_type, odds_format="00")
+            _ao_last_fetch_by_market[market_type] = time.time()
+        except Exception as e:
+            logger.error(f"AO fetch error {sport_name} mtype={market_type}: {e}")
+            _ao_last_fetch_by_market[market_type] = time.time()
+            continue
+
+        # --- PROCESS THE RESPONSE ---
+        matches = []
+        if feed_data and isinstance(feed_data, list):
+            for sf in feed_data:
+                if sf and isinstance(sf, dict):
+                    matches.extend(sf.get('MatchGames', []) or [])
+
+        # Track entries flagged for removal
+        removals = set()
+        for m in matches:
+            if m and isinstance(m, dict) and m.get('WillBeRemoved', False):
+                home_obj = m.get('HomeTeam') or {}
+                away_obj = m.get('AwayTeam') or {}
+                h = home_obj.get('Name', '') if isinstance(home_obj, dict) else ''
+                a = away_obj.get('Name', '') if isinstance(away_obj, dict) else ''
+                if h and a:
+                    league = m.get('LeagueName', '')
+                    removals.add(f"{h}_{a}_{league}")
+
+        # Filter active entries
+        filtered = [m for m in matches if m and isinstance(m, dict)
+                    and not m.get('WillBeRemoved', False)
+                    and m.get('IsActive', True) is not False]
+
+        # Deduplicate: prefer entries with 1X2/ML BookieOdds
+        new_entries = {}
+        for m in filtered:
+            home_obj = m.get('HomeTeam') or {}
+            away_obj = m.get('AwayTeam') or {}
+            h = home_obj.get('Name', '') if isinstance(home_obj, dict) else ''
+            a = away_obj.get('Name', '') if isinstance(away_obj, dict) else ''
+            if not h: h = m.get('HomeTeamName', '')
+            if not a: a = m.get('AwayTeamName', '')
+            if h and a:
+                league = m.get('LeagueName', '')
+                cache_entry_key = f"{h}_{a}_{league}"
+                has_odds = False
+                for odds_field in ['FullTimeOneXTwo', 'FullTimeMoneyLine']:
+                    od = m.get(odds_field) or {}
+                    if isinstance(od, dict) and od.get('BookieOdds'):
+                        has_odds = True
+                        break
+                if has_odds or cache_entry_key not in new_entries:
+                    new_entries[cache_entry_key] = m
+
+        # Snapshot vs delta merge
+        is_full_snapshot = cache_key not in _asianodds_cache_time
+
+        if is_full_snapshot and new_entries:
+            # Full snapshot — replace cache entirely
+            existing = new_entries
+        else:
+            # Delta — merge new entries into existing cache
+            existing = _asianodds_cache.get(cache_key, {})
+            if not isinstance(existing, dict):
+                existing = {}
+            for remove_key in removals:
+                existing.pop(remove_key, None)
+            # Merge: only overwrite if new entry has 1X2/ML odds
+            # (prevents HDP/O/U deltas from wiping cached PIN prices)
+            for key, match in new_entries.items():
+                new_has_odds = False
+                for odds_field in ['FullTimeOneXTwo', 'FullTimeMoneyLine']:
+                    od = match.get(odds_field) or {}
+                    if isinstance(od, dict) and od.get('BookieOdds'):
+                        new_has_odds = True
+                        break
+                if new_has_odds or key not in existing:
+                    existing[key] = match
+
+        _asianodds_cache[cache_key] = existing
+
+        # FIX: Only set cache_time if we got data. If empty snapshot,
+        # leave unset so next tick retries the snapshot opportunity.
+        if new_entries or not is_full_snapshot:
+            _asianodds_cache_time[cache_key] = time.time()
+
+        _save_ao_cache(_asianodds_cache)
+
+        mtype_name = {0: "Live", 1: "Today", 2: "Early"}.get(market_type, str(market_type))
+        mode = "SNAPSHOT" if is_full_snapshot else "DELTA"
+        logger.info(f"AO {sport_name} {mtype_name} [{mode}]: {len(matches)} raw, {len(new_entries)} deduped, {len(existing)} cached")
+
+        if is_full_snapshot and matches:
+            league_set = set()
+            for m in matches:
+                if m and isinstance(m, dict):
+                    league_set.add(m.get('LeagueName', '?'))
+            logger.info(f"  Leagues in {mtype_name}: {sorted(league_set)}")
+
+
+def _ao_match_all_cached():
+    """
+    Phase B: Match ALL cached AO data against DB rows and write PIN prices.
+    Runs every tick. Fast — just dict lookups against in-memory cache.
+    Also clears stale prices that AO no longer provides.
+    """
+    global _ao_price_last_seen, _ao_last_match_log
+
     if not ASIANODDS_ENABLED or not _cached_active_rows:
         return
 
-    try:
-        asian_prices = fetch_asianodds_prices(_cached_active_rows, _cached_id_to_row_map)
-        if not asian_prices:
-            return
+    ao_client = get_asianodds_client()
+    if not ao_client:
+        return
 
-        updates = {}
-        for row_id, prices in asian_prices.items():
+    updates = {}
+    now = time.time()
+    should_log = (now - _ao_last_match_log) > 30  # Full logging every 30s
+
+    for sport_name, sport_id in ASIANODDS_SPORT_MAP.items():
+        ao_has_pin = 0
+        ao_skipped_no_pin = 0
+        ao_unmatched = []
+
+        # Build all_matches from cache: Early(2) -> Today(1) -> Live(0)
+        # Live comes LAST so its prices win "last write wins"
+        if sport_name == 'Basketball':
+            market_types_ordered = [1, 0]   # Today, then Live
+        else:
+            market_types_ordered = [2, 1, 0]  # Early, Today, Live
+
+        all_matches = []
+        for mt in market_types_ordered:
+            cache_key = f"{sport_id}_{mt}"
+            cached = _asianodds_cache.get(cache_key, {})
+            if isinstance(cached, dict):
+                all_matches.extend([m for m in cached.values() if m and isinstance(m, dict)])
+
+        if not all_matches:
+            if should_log:
+                logger.info(f"AO match: No cached data for {sport_name}")
+            continue
+
+        # --- MATCHING LOOP ---
+        for match in all_matches:
+            if not match or not isinstance(match, dict):
+                continue
+            if match.get('WillBeRemoved', False) or match.get('IsActive', True) is False:
+                continue
+
+            home_obj = match.get('HomeTeam') or {}
+            away_obj = match.get('AwayTeam') or {}
+            home_team = home_obj.get('Name', '') if isinstance(home_obj, dict) else ''
+            away_team = away_obj.get('Name', '') if isinstance(away_obj, dict) else ''
+            if not home_team: home_team = match.get('HomeTeamName', '')
+            if not away_team: away_team = match.get('AwayTeamName', '')
+            if not home_team or not away_team:
+                continue
+
+            norm_home = normalize(home_team)
+            norm_away = normalize(away_team)
+
+            # Get odds - try multiple fields, use whichever has BookieOdds
+            bookie_odds_str = ''
+            for field in ['FullTimeOneXTwo', 'FullTimeMoneyLine']:
+                md = match.get(field) or {}
+                odds = md.get('BookieOdds', '') if isinstance(md, dict) else ''
+                if odds:
+                    bookie_odds_str = odds
+                    break
+            if not bookie_odds_str:
+                continue
+
+            parsed_odds = ao_client.parse_bookie_odds(bookie_odds_str)
+            has_pinnacle = 'PIN' in parsed_odds or 'SIN' in parsed_odds
+            if not parsed_odds or not has_pinnacle:
+                ao_skipped_no_pin += 1
+                continue
+
+            ao_has_pin += 1
+            ao_matched_this = False
+
+            for row in _cached_active_rows:
+                if row['sport'] != sport_name:
+                    continue
+
+                runner_match = False
+                side = None
+                if check_match(norm_home, row['norm_runner']):
+                    runner_match = True
+                    side = 'home'
+                elif check_match(norm_away, row['norm_runner']):
+                    runner_match = True
+                    side = 'away'
+                elif sport_name == 'Soccer' and 'draw' in row['norm_runner'].lower():
+                    runner_match = True
+                    side = 'draw'
+
+                if not runner_match:
+                    continue
+
+                event_match = (team_in_event(norm_home, row['norm_event']) and
+                               team_in_event(norm_away, row['norm_event']))
+                if not event_match:
+                    continue
+
+                pin_odds = parsed_odds.get('PIN') or parsed_odds.get('SIN') or {}
+                pin_price = pin_odds.get(side, 0)
+
+                if pin_price and pin_price > 1.01:
+                    row_id = row['id']
+                    updates[row_id] = {'price_pinnacle': pin_price}
+                    _ao_price_last_seen[row_id] = now
+                    ao_matched_this = True
+                    if should_log:
+                        src = 'PIN' if 'PIN' in parsed_odds else 'SIN'
+                        logger.info(f"  {src}: {row['runner_name']} @ {pin_price}")
+
+            if not ao_matched_this:
+                ao_unmatched.append(f"{home_team} v {away_team}")
+
+        if should_log:
+            sport_rows = [r for r in _cached_active_rows if r['sport'] == sport_name]
+            logger.info(f"AO {sport_name}: {ao_has_pin} PIN, {ao_skipped_no_pin} no-PIN, {len(sport_rows)} DB rows")
+            if ao_unmatched:
+                logger.warning(f"AO {sport_name}: {len(ao_unmatched)} unmatched: {ao_unmatched[:5]}")
+
+    # --- WRITE PIN PRICES TO DB ---
+    if updates:
+        data_list = []
+        for row_id, prices in updates.items():
             orig_row = _cached_id_to_row_map.get(row_id, {})
-            updates[row_id] = {
+            data_list.append({
                 'id': row_id,
                 'sport': orig_row.get('sport'),
                 'market_id': orig_row.get('market_id'),
                 'runner_name': orig_row.get('runner_name'),
                 'price_pinnacle': prices['price_pinnacle'],
                 'last_updated': datetime.now(timezone.utc).isoformat()
-            }
+            })
+        for i in range(0, len(data_list), 100):
+            supabase.table('market_feed').upsert(data_list[i:i+100], on_conflict='id').execute()
+        logger.info(f"AO: {len(updates)} PIN prices written")
 
-        if updates:
-            data_list = list(updates.values())
-            for i in range(0, len(data_list), 100):
-                supabase.table('market_feed').upsert(data_list[i:i+100], on_conflict='id').execute()
-            logger.info(f"🇸🇬 AO: {len(asian_prices)} PIN prices written")
-    except Exception as e:
-        logger.error(f"AO cycle error: {e}")
+    # --- CLEAR STALE PRICES ---
+    # For rows that HAD a PIN price but AO hasn't confirmed it in >300s, null it
+    stale_row_ids = []
+    for row in _cached_active_rows:
+        row_id = row['id']
+        if row_id in updates:
+            continue  # Just confirmed this tick
+        last_seen = _ao_price_last_seen.get(row_id)
+        if last_seen and (now - last_seen) > AO_PRICE_STALE_SECONDS:
+            stale_row_ids.append(row_id)
+            _ao_price_last_seen.pop(row_id, None)  # Reset so we don't clear repeatedly
 
-def fetch_asianodds_prices(active_rows, id_to_row_map):
-    """
-    Fetch sharp Asian prices and match to our active markets.
-    Returns dict: {row_id: {'price_pinnacle': pin_price}}
-    """
-    global _asianodds_cache, _asianodds_cache_time, _asianodds_last_reauth
+    if stale_row_ids:
+        stale_data = []
+        for row_id in stale_row_ids:
+            orig_row = _cached_id_to_row_map.get(row_id, {})
+            stale_data.append({
+                'id': row_id,
+                'sport': orig_row.get('sport'),
+                'market_id': orig_row.get('market_id'),
+                'runner_name': orig_row.get('runner_name'),
+                'price_pinnacle': None,
+                'last_updated': datetime.now(timezone.utc).isoformat()
+            })
+        for i in range(0, len(stale_data), 100):
+            supabase.table('market_feed').upsert(stale_data[i:i+100], on_conflict='id').execute()
+        logger.warning(f"AO: Cleared {len(stale_row_ids)} stale PIN prices (>{AO_PRICE_STALE_SECONDS}s)")
 
-    if not ASIANODDS_ENABLED:
-        return {}
-
-    ao_client = get_asianodds_client()
-    if not ao_client:
-        logger.warning("AsianOdds client not configured - skipping")
-        return {}
-
-    updates = {}
-    now = time.time()
-
-    # Periodic re-auth to get fresh full snapshot (resets incremental delta baseline).
-    if now - _asianodds_last_reauth > ASIANODDS_REAUTH_INTERVAL:
-        logger.info("AO: Periodic re-auth for fresh snapshot...")
-        ao_client.ao_token = None
-        ao_client.ao_key = None
-        if ao_client.login() and ao_client.register():
-            _asianodds_cache_time = {}  # Force all buckets to re-fetch
-            _asianodds_last_reauth = now
-            logger.info("AO: Re-auth OK — next fetch will be full snapshot")
-            # Diagnostic: check what leagues AO offers for Soccer
-            try:
-                soccer_leagues = ao_client.get_leagues(1)  # 1 = Football/Soccer
-                league_names = [l.get('LeagueName', '') for l in soccer_leagues if isinstance(l, dict)]
-                epl_leagues = [n for n in league_names if 'PREMIER' in n.upper() or 'EPL' in n.upper() or 'ENGLISH' in n.upper()]
-                nba_leagues_check = ao_client.get_leagues(2)  # 2 = Basketball
-                nba_names = [l.get('LeagueName', '') for l in nba_leagues_check if isinstance(l, dict)]
-                nba_found = [n for n in nba_names if 'NBA' in n.upper()]
-                logger.info(f"AO LEAGUES: Soccer has {len(league_names)} leagues, EPL-related: {epl_leagues[:5]}")
-                logger.info(f"AO LEAGUES: Basketball has {len(nba_names)} leagues, NBA-related: {nba_found[:5]}")
-            except Exception as e:
-                logger.warning(f"AO GetLeagues diagnostic failed: {e}")
-        else:
-            logger.error("AO: Re-auth failed")
-            _asianodds_last_reauth = now
-
-    for sport_name, sport_id in ASIANODDS_SPORT_MAP.items():
-        ao_has_pin = 0
-        ao_skipped_no_pin = 0
-        ao_unmatched = []
-        try:
-            # Fetch Live, Today, and Early with separate TTLs
-            # NBA only appears in Live market (market_type=1) — not in Today/Early
-            # EPL matches near kickoff also move to Live before they start
-            # Collect matches per bucket so we can control final ordering.
-            # Live must come LAST in all_matches so its fresh prices win
-            # "last write wins" in the matching loop (prevents stale Today/Early
-            # cache entries from overwriting fresh Live prices).
-            bucket_matches = {}  # {market_type: [match_dicts]}
-
-            # Skip Early for Basketball — NBA is never in Early market
-            if sport_name == 'Basketball':
-                market_types = [(0, ASIANODDS_TTL_LIVE), (1, ASIANODDS_TTL_TODAY)]
-            else:
-                market_types = [(0, ASIANODDS_TTL_LIVE), (1, ASIANODDS_TTL_TODAY), (2, ASIANODDS_TTL_EARLY)]
-            for market_type, ttl in market_types:
-                cache_key = f"{sport_id}_{market_type}"
-                cache_age = now - _asianodds_cache_time.get(cache_key, 0)
-
-                if cache_key in _asianodds_cache and cache_age < ttl:
-                    # Use cached data (dict keyed by home_away)
-                    cached = _asianodds_cache[cache_key] or {}
-                    bucket_matches[market_type] = [m for m in cached.values() if m and isinstance(m, dict)]
-                else:
-                    # Fetch fresh — rate limits are per market type (Live/Today/Early)
-                    last_fetch = _ao_last_fetch_by_market.get(market_type, 0)
-                    elapsed = time.time() - last_fetch
-                    if elapsed < ttl and last_fetch > 0:
-                        time.sleep(ttl - elapsed)
-
-                    # Don't pass since — let server manage delta tracking.
-                    # First call after re-auth = full snapshot, subsequent = deltas.
-                    # Re-auth every 2 min resets delta tracker for fresh snapshots.
-                    feed_data = ao_client.get_feeds(sport_id, market_type_id=market_type,
-                                                    odds_format="00")
-                    _ao_last_fetch_by_market[market_type] = time.time()
-
-                    matches = []
-                    if feed_data and isinstance(feed_data, list):
-                        for sf in feed_data:
-                            if sf and isinstance(sf, dict):
-                                matches.extend(sf.get('MatchGames', []) or [])
-
-                    # Track entries flagged for removal (delta tells us to drop them)
-                    removals = set()
-                    for m in matches:
-                        if m and isinstance(m, dict) and m.get('WillBeRemoved', False):
-                            home_obj = m.get('HomeTeam') or {}
-                            away_obj = m.get('AwayTeam') or {}
-                            h = home_obj.get('Name', '') if isinstance(home_obj, dict) else ''
-                            a = away_obj.get('Name', '') if isinstance(away_obj, dict) else ''
-                            if h and a:
-                                league = m.get('LeagueName', '')
-                                removals.add(f"{h}_{a}_{league}")
-
-                    # Filter out None, removed, and inactive entries
-                    filtered = [m for m in matches if m and isinstance(m, dict)
-                                and not m.get('WillBeRemoved', False)
-                                and m.get('IsActive', True) is not False]
-
-                    # Build new entries dict from this fetch.
-                    # Same match appears multiple times (1X2, HDP, O/U) with
-                    # different GameIds. Prefer entries with 1X2/ML BookieOdds.
-                    new_entries = {}
-                    for m in filtered:
-                        home_obj = m.get('HomeTeam') or {}
-                        away_obj = m.get('AwayTeam') or {}
-                        h = home_obj.get('Name', '') if isinstance(home_obj, dict) else ''
-                        a = away_obj.get('Name', '') if isinstance(away_obj, dict) else ''
-                        if not h:
-                            h = m.get('HomeTeamName', '')
-                        if not a:
-                            a = m.get('AwayTeamName', '')
-                        if h and a:
-                            league = m.get('LeagueName', '')
-                            cache_entry_key = f"{h}_{a}_{league}"
-                            has_odds = False
-                            for odds_field in ['FullTimeOneXTwo', 'FullTimeMoneyLine']:
-                                od = m.get(odds_field) or {}
-                                if isinstance(od, dict) and od.get('BookieOdds'):
-                                    has_odds = True
-                                    break
-                            if has_odds or cache_entry_key not in new_entries:
-                                new_entries[cache_entry_key] = m
-
-                    # First fetch after re-auth = full snapshot → replace cache.
-                    # Subsequent fetches = deltas → merge into cache.
-                    # This prevents delta responses from wiping cached EPL/NBA
-                    # entries that haven't changed (the core stale-price bug).
-                    is_full_snapshot = cache_key not in _asianodds_cache_time
-
-                    if is_full_snapshot and new_entries:
-                        # Full snapshot — replace cache entirely
-                        existing = new_entries
-                    else:
-                        # Delta — merge new entries into existing cache
-                        existing = _asianodds_cache.get(cache_key, {})
-                        if not isinstance(existing, dict):
-                            existing = {}
-                        # Remove entries flagged for removal
-                        for remove_key in removals:
-                            existing.pop(remove_key, None)
-                        # Merge: only overwrite if new entry has 1X2/ML odds
-                        # (prevents HDP/O/U deltas from wiping cached PIN prices)
-                        for key, match in new_entries.items():
-                            new_has_odds = False
-                            for odds_field in ['FullTimeOneXTwo', 'FullTimeMoneyLine']:
-                                od = match.get(odds_field) or {}
-                                if isinstance(od, dict) and od.get('BookieOdds'):
-                                    new_has_odds = True
-                                    break
-                            if new_has_odds or key not in existing:
-                                existing[key] = match
-
-                    _asianodds_cache[cache_key] = existing
-                    _asianodds_cache_time[cache_key] = time.time()
-                    _save_ao_cache(_asianodds_cache)  # persist to disk
-                    bucket_matches[market_type] = list(existing.values())
-
-                    mtype_name = {0: "Live", 1: "Today", 2: "Early"}.get(market_type, str(market_type))
-                    mode = "SNAPSHOT" if is_full_snapshot else "DELTA"
-                    logger.info(f"AsianOdds {sport_name} {mtype_name} [{mode}]: {len(matches)} raw, {len(new_entries)} deduped, {len(existing)} total cached")
-                    # Diagnostic: log unique league names from snapshot to identify what AO has
-                    if is_full_snapshot and matches:
-                        league_set = set()
-                        for m in matches:
-                            if m and isinstance(m, dict):
-                                league_set.add(m.get('LeagueName', '?'))
-                        logger.info(f"  Leagues in {mtype_name}: {sorted(league_set)}")
-
-            # Build all_matches: Early first, Today second, Live LAST.
-            # "Last write wins" in the matching loop, so Live's fresh
-            # prices take priority over stale Today/Early cache entries.
-            all_matches = []
-            for mt in sorted(bucket_matches.keys(), reverse=True):
-                all_matches.extend(bucket_matches[mt])
-
-            feeds = [{'MatchGames': all_matches}] if all_matches else []
-
-            if not feeds:
-                logger.info(f"AsianOdds: No feeds for {sport_name}")
-                continue
-
-            # Parse through the nested structure
-            for sport_feed in feeds:
-                match_games = sport_feed.get('MatchGames', []) or []
-
-                for match in match_games:
-                    if not match or not isinstance(match, dict):
-                        continue
-
-                    # Skip removed/inactive markets (AO API flags)
-                    if match.get('WillBeRemoved', False) or match.get('IsActive', True) is False:
-                        continue
-
-                    # Team names - try nested first, then flat
-                    home_obj = match.get('HomeTeam') or {}
-                    away_obj = match.get('AwayTeam') or {}
-                    home_team = home_obj.get('Name', '') if isinstance(home_obj, dict) else ''
-                    away_team = away_obj.get('Name', '') if isinstance(away_obj, dict) else ''
-
-                    # Fallback to flat field names
-                    if not home_team:
-                        home_team = match.get('HomeTeamName', '')
-                    if not away_team:
-                        away_team = match.get('AwayTeamName', '')
-
-                    if not home_team or not away_team:
-                        continue
-
-                    norm_home = normalize(home_team)
-                    norm_away = normalize(away_team)
-
-                    # Get odds - try multiple fields, use whichever has BookieOdds
-                    # NBA Live market has odds in FullTimeOneXTwo (not MoneyLine)
-                    bookie_odds_str = ''
-                    for field in ['FullTimeOneXTwo', 'FullTimeMoneyLine']:
-                        md = match.get(field) or {}
-                        odds = md.get('BookieOdds', '') if isinstance(md, dict) else ''
-                        if odds:
-                            bookie_odds_str = odds
-                            break
-                    if not bookie_odds_str:
-                        continue
-
-                    # Parse the bookie odds
-                    parsed_odds = ao_client.parse_bookie_odds(bookie_odds_str)
-                    # Accept PIN (direct Pinnacle) or SIN (Singbet = Pinnacle redistributor)
-                    has_pinnacle = 'PIN' in parsed_odds or 'SIN' in parsed_odds
-                    if not parsed_odds or not has_pinnacle:
-                        ao_skipped_no_pin += 1
-                        continue
-
-                    ao_has_pin += 1
-                    ao_matched_this = False
-
-                    # Find matching rows in our DB
-                    for row in active_rows:
-                        if row['sport'] != sport_name:
-                            continue
-
-                        # Match by team names (home or away)
-                        runner_match = False
-                        side = None
-
-                        if check_match(norm_home, row['norm_runner']):
-                            runner_match = True
-                            side = 'home'
-                        elif check_match(norm_away, row['norm_runner']):
-                            runner_match = True
-                            side = 'away'
-                        elif sport_name == 'Soccer' and 'draw' in row['norm_runner'].lower():
-                            # Only soccer has draws
-                            runner_match = True
-                            side = 'draw'
-
-                        if not runner_match:
-                            continue
-
-                        # Event must contain BOTH teams to prevent cross-match contamination
-                        event_match = (team_in_event(norm_home, row['norm_event']) and team_in_event(norm_away, row['norm_event']))
-
-                        if not event_match:
-                            continue
-
-                        # Get Pinnacle price — prefer PIN (direct), fallback SIN (Singbet)
-                        pin_odds = parsed_odds.get('PIN') or parsed_odds.get('SIN') or {}
-                        pin_price = pin_odds.get(side, 0)
-
-                        if pin_price and pin_price > 1.01:
-                            row_id = row['id']
-                            updates[row_id] = {
-                                'price_pinnacle': pin_price
-                            }
-                            ao_matched_this = True
-                            src = 'PIN' if 'PIN' in parsed_odds else 'SIN'
-                            # Debug: log raw odds for EPL matches to diagnose stale prices
-                            if 'brentford' in row['norm_runner'] or 'arsenal' in row['norm_runner']:
-                                logger.info(f"DEBUG {src}: {row['runner_name']} side={side} price={pin_price} raw_odds={bookie_odds_str} parsed={parsed_odds.get('PIN') or parsed_odds.get('SIN')}")
-                            logger.info(f"✓ {src}: {row['runner_name']} @ {pin_price}")
-
-                    if not ao_matched_this:
-                        ao_unmatched.append(f"{home_team} v {away_team} (norm: {norm_home} v {norm_away})")
-
-            # Summary line per sport
-            sport_rows = [r for r in active_rows if r['sport'] == sport_name]
-            logger.info(f"AO {sport_name}: {ao_has_pin} with PIN, {ao_skipped_no_pin} without PIN, {len(sport_rows)} DB rows")
-
-            # Diagnostic: show unmatched AO games with PIN prices
-            if ao_unmatched:
-                logger.warning(f"AO {sport_name}: {len(ao_unmatched)} games with PIN but NO DB match:")
-                for g in ao_unmatched[:10]:
-                    logger.warning(f"  UNMATCHED: {g}")
-                # Also show DB rows for comparison
-                db_runners = [f"{r['norm_runner']}|{r['norm_event']}" for r in sport_rows[:10]]
-                logger.warning(f"  DB rows ({len(sport_rows)}): {db_runners}")
-
-        except Exception as e:
-            logger.error(f"AsianOdds fetch error for {sport_name}: {e}")
-
-    # Per-sport breakdown
-    sport_counts = {}
-    for rid, u in updates.items():
-        orig = id_to_row_map.get(rid, {})
-        s = orig.get('sport', 'Unknown')
-        sport_counts[s] = sport_counts.get(s, 0) + 1
-    if updates:
-        logger.info(f"🎯 AsianOdds: Matched {len(updates)} prices {sport_counts}")
-    else:
-        logger.info(f"AsianOdds: No prices matched to DB rows")
-
-    return updates
+    if should_log:
+        _ao_last_match_log = now
 
 
 # --- MAIN ENGINE ---
@@ -1034,11 +1062,19 @@ def run_spy():
 
     tracker.report()
 
-    # AO prices now run independently via run_ao_cycle() on every main loop tick.
-    # Cache active rows for it to use.
+    # Cache active rows for AO matching phases.
     global _cached_active_rows, _cached_id_to_row_map
     _cached_active_rows = active_rows
     _cached_id_to_row_map = id_to_row_map
+
+    # Seed _ao_price_last_seen for rows that already have price_pinnacle in DB.
+    # Prevents staleness-clearing from immediately nulling existing prices on startup.
+    for row in active_rows:
+        row_id = row['id']
+        if row_id not in _ao_price_last_seen:
+            orig = id_to_row_map.get(row_id, {})
+            if orig.get('price_pinnacle') is not None:
+                _ao_price_last_seen[row_id] = time.time()
 
     if updates:
         logger.info(f"Spy: Updating {len(updates)} rows...")
@@ -1285,8 +1321,10 @@ if __name__ == "__main__":
                 
         fetch_betfair()
 
-        # AO prices on every tick (~6s) — independent of spy cycle
-        run_ao_cycle()
+        # AO: Non-blocking two-phase pipeline (no sleeps, max 3 API calls/tick)
+        _ao_reauth_if_needed()
+        _ao_fetch_one_tick()
+        _ao_match_all_cached()
 
         # Dynamic spy interval: fast during in-play, slow otherwise
         spy_interval = INPLAY_SPY_INTERVAL if has_inplay_markets() else PREMATCH_SPY_INTERVAL
