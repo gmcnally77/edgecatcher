@@ -462,10 +462,12 @@ def _ao_fetch_one_tick():
             continue
 
         # --- MAKE THE API CALL (with explicit delta cursor) ---
-        # Only pass cursor if we've received data before; otherwise force snapshot
+        # Force since=0 on first fetch per cache_key to get full snapshot.
+        # AO sessions persist across restarts — without this, we only get
+        # deltas that miss leagues (like EPL) whose odds haven't changed.
         since_cursor = _ao_since_cursors.get(cache_key)
         if cache_key not in _asianodds_cache_time:
-            since_cursor = None  # Force full snapshot — haven't received data yet
+            since_cursor = 0  # Force full snapshot from AO
         try:
             feed_result = ao_client.get_feeds(sport_id, market_type_id=market_type, odds_format="00", since=since_cursor)
             _ao_last_fetch_by_market[market_type] = time.time()
