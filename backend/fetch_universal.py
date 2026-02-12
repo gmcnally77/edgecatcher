@@ -483,19 +483,12 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
                                     has_odds = True
                                     break
                             if has_odds or cache_entry_key not in new_entries:
-                                m['_cache_ts'] = now  # timestamp for staleness tracking
+                                m['_market_type'] = market_type  # 0=Live, 1=Today, 2=Early
                                 new_entries[cache_entry_key] = m
 
                     existing = _asianodds_cache.get(cache_key, {})
                     if not isinstance(existing, dict):
                         existing = {}
-
-                    # Prune entries older than 10 minutes — prevents stale prices persisting
-                    stale_cutoff = now - 600
-                    stale_keys = [k for k, v in existing.items()
-                                  if isinstance(v, dict) and v.get('_cache_ts', 0) < stale_cutoff]
-                    for k in stale_keys:
-                        del existing[k]
 
                     # Merge — snapshot overwrites existing entries,
                     # incremental deltas add/update changed entries
@@ -511,8 +504,9 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
                     logger.info(f"AsianOdds {sport_name} {mtype_name}: {len(filtered)} fresh, {len(existing)} total cached")
 
             # Deduplicate matches across market buckets (Live/Today/Early).
-            # When a match moves from Today→Live, stale Today cache entry can
-            # overwrite fresh Live price. Prefer entries with BookieOdds.
+            # When a match moves from Today→Live, it can exist in both caches.
+            # Prefer Live (market_type=0) over Today (1) over Early (2)
+            # because Live has the freshest prices for near-kickoff matches.
             deduped = {}
             for m in all_matches:
                 home_obj = m.get('HomeTeam') or {}
@@ -522,16 +516,27 @@ def fetch_asianodds_prices(active_rows, id_to_row_map):
                 if not h or not a:
                     continue
                 key = f"{h}_{a}"
-                # Keep entry that has BookieOdds; if both have it, later one wins
                 has_odds = False
                 for field in ['FullTimeOneXTwo', 'FullTimeMoneyLine']:
                     od = m.get(field) or {}
                     if isinstance(od, dict) and od.get('BookieOdds'):
                         has_odds = True
                         break
-                existing = deduped.get(key)
-                if not existing or has_odds:
+                existing_entry = deduped.get(key)
+                if not existing_entry:
                     deduped[key] = m
+                elif has_odds:
+                    existing_has_odds = any(
+                        isinstance((existing_entry.get(f) or {}), dict)
+                        and (existing_entry.get(f) or {}).get('BookieOdds')
+                        for f in ['FullTimeOneXTwo', 'FullTimeMoneyLine']
+                    )
+                    if not existing_has_odds:
+                        # New entry has odds, existing doesn't → take new
+                        deduped[key] = m
+                    elif m.get('_market_type', 99) < existing_entry.get('_market_type', 99):
+                        # Both have odds → prefer Live (lower _market_type)
+                        deduped[key] = m
             all_matches = list(deduped.values())
 
             feeds = [{'MatchGames': all_matches}] if all_matches else []
