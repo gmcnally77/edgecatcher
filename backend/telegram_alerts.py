@@ -4,18 +4,17 @@ import sqlite3
 import requests
 import logging
 from datetime import datetime, timezone
+from collections import deque
 
 # --- CONFIGURATION ---
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
-ALERT_EDGE_THRESHOLD = float(os.getenv("ALERT_EDGE_THRESHOLD", "0.003"))
-ALERT_COMMISSION = float(os.getenv("ALERT_COMMISSION", "0.02"))
 ALERT_MIN_VOLUME = float(os.getenv("ALERT_MIN_VOLUME", "200.0"))
 ALERT_COOLDOWN_SECONDS = int(os.getenv("ALERT_COOLDOWN_SECONDS", "600"))
 
-# NEW: STRICT STEAMER GATES
-ALERT_MIN_PRICE_ADVANTAGE = 0.01  # Bookie must be 2% higher than Lay
-ALERT_MAX_SPREAD = 0.04           # Exchange Spread must be < 4%
+# Steamer detection config
+STEAMER_DROP_PCT = float(os.getenv("STEAMER_DROP_PCT", "0.02"))  # 2% drop threshold
+STEAMER_WINDOW_TICKS = int(os.getenv("STEAMER_WINDOW_TICKS", "6"))  # ~30s at 5s ticks
 
 # Guard: Only run logic if this mode is active
 SCOPE_MODE = os.getenv("SCOPE_MODE", "NBA_PREMATCH_ML_STEAMERS")
@@ -27,6 +26,10 @@ DB_FILE = os.path.join(BASE_DIR, "alerts.db")
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - ALERTS - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
+# --- IN-MEMORY PRICE HISTORY ---
+# {runner_key: deque([(timestamp, pin_price, mid_price), ...], maxlen=7)}
+_price_history = {}
 
 # --- SQLITE DEDUPE STORE ---
 def init_db():
@@ -59,28 +62,27 @@ def get_last_alert(runner_key):
         logger.error(f"DB Read Error: {e}")
         return None
 
-def update_alert_history(runner_key, edge, book_price, lay_price):
+def update_alert_history(runner_key, drop_pct, old_price, new_price):
     try:
         conn = sqlite3.connect(DB_FILE)
         c = conn.cursor()
         now = time.time()
         c.execute('''
-            INSERT OR REPLACE INTO alert_history 
+            INSERT OR REPLACE INTO alert_history
             (id, last_alert_time, last_edge, last_book_price, last_lay_price)
             VALUES (?, ?, ?, ?, ?)
-        ''', (runner_key, now, edge, book_price, lay_price))
+        ''', (runner_key, now, drop_pct, old_price, new_price))
         conn.commit()
         conn.close()
-        # Log success so we know memory is working
-        logger.info(f"✅ Alert saved to memory: {runner_key}")
+        logger.info(f"Alert saved to memory: {runner_key}")
     except Exception as e:
-        logger.error(f"❌ DB Write Failed! Alerts will duplicate. Error: {e}")
+        logger.error(f"DB Write Failed! Alerts will duplicate. Error: {e}")
 
 # --- TELEGRAM BOT UTILS ---
 def send_telegram_message(text):
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
         return False
-    
+
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     payload = { "chat_id": TELEGRAM_CHAT_ID, "text": text, "parse_mode": "HTML" }
     try:
@@ -103,14 +105,14 @@ def check_bot_commands():
             msg = result.get("message", {})
             text = msg.get("text", "")
             chat_id = msg.get("chat", {}).get("id")
-            
+
             if str(chat_id) != str(TELEGRAM_CHAT_ID): continue
 
             if text.strip() == "/status":
                 send_status_report()
                 requests.get(url, params={"offset": update_id + 1})
     except Exception:
-        pass 
+        pass
 
 def send_status_report():
     conn = sqlite3.connect(DB_FILE)
@@ -123,39 +125,58 @@ def send_status_report():
         count = 0
     conn.close()
 
+    tracking = len(_price_history)
     msg = (
-        f"<b>🤖 Independence Bot Status</b>\n"
-        f"✅ Mode: {SCOPE_MODE}\n"
-        f"📊 Alerts (1h): {count}\n"
-        f"📂 DB Path: {DB_FILE}\n"
-        f"🕒 UTC: {datetime.now(timezone.utc).strftime('%H:%M:%S')}"
+        f"<b>Independence Bot Status</b>\n"
+        f"Mode: {SCOPE_MODE}\n"
+        f"Alerts (1h): {count}\n"
+        f"Tracking: {tracking} runners\n"
+        f"Drop threshold: {STEAMER_DROP_PCT*100}% in ~{STEAMER_WINDOW_TICKS*5}s\n"
+        f"UTC: {datetime.now(timezone.utc).strftime('%H:%M:%S')}"
     )
     send_telegram_message(msg)
 
-# --- CORE LOGIC ---
-def calculate_edge(book_odds, lay_odds):
-    if not book_odds or not lay_odds or book_odds <= 1.01 or lay_odds <= 1.01:
-        return -1.0
-    implied_back = 1.0 / book_odds
-    implied_lay_net = 1.0 / (lay_odds * (1.0 - ALERT_COMMISSION))
-    return implied_lay_net - implied_back
+# --- STEAMER DETECTION ---
+def check_price_drop(runner_key, current_pin, current_mid):
+    history = _price_history.get(runner_key)
+    if not history or len(history) < STEAMER_WINDOW_TICKS:
+        return None  # Not enough history yet
 
-def should_alert(runner_key, edge, book_price, lay_price):
+    old_ts, old_pin, old_mid = history[0]  # oldest entry (~30s ago)
+
+    # Check PIN drop
+    if old_pin and old_pin > 1.01 and current_pin and current_pin > 1.01:
+        pin_drop = (old_pin - current_pin) / old_pin
+        if pin_drop >= STEAMER_DROP_PCT:
+            return {'type': 'PIN', 'old': old_pin, 'new': current_pin, 'drop_pct': pin_drop}
+
+    # Check exchange mid drop
+    if old_mid and old_mid > 1.01 and current_mid and current_mid > 1.01:
+        mid_drop = (old_mid - current_mid) / old_mid
+        if mid_drop >= STEAMER_DROP_PCT:
+            return {'type': 'EX', 'old': old_mid, 'new': current_mid, 'drop_pct': mid_drop}
+
+    return None
+
+def should_alert(runner_key, drop_pct):
     last = get_last_alert(runner_key)
-    if not last: return True
-    
-    _, last_ts, last_edge, last_book, last_lay = last
-    if edge >= (last_edge + 0.002): return True
-    if (time.time() - last_ts) > ALERT_COOLDOWN_SECONDS: return True
-    if abs(book_price - last_book) >= 0.03 or abs(lay_price - last_lay) >= 0.03: return True
-    return False
+    if not last:
+        return True
+
+    _, last_ts, last_drop, _, _ = last
+    # Cooldown not expired
+    if (time.time() - last_ts) <= ALERT_COOLDOWN_SECONDS:
+        # Re-alert if this drop is significantly bigger than the last one
+        if drop_pct >= (last_drop + 0.02):
+            return True
+        return False
+    return True
 
 def run_alert_cycle(supabase_client):
     init_db()
     check_bot_commands()
 
     try:
-        # Fetch OPEN, Not In Play markets
         response = supabase_client.table("market_feed") \
             .select("*") \
             .eq("market_status", "OPEN") \
@@ -166,64 +187,71 @@ def run_alert_cycle(supabase_client):
         logger.error(f"Supabase fetch failed: {e}")
         return
 
+    now = time.time()
     alerts_sent = 0
 
     for row in rows:
         vol = row.get('volume')
-        if vol is None or vol < ALERT_MIN_VOLUME: continue
+        if vol is None or vol < ALERT_MIN_VOLUME:
+            continue
 
         start_time_str = row.get('start_time')
         if start_time_str:
             try:
                 start_dt = datetime.fromisoformat(start_time_str.replace("Z", "+00:00"))
-                if datetime.now(timezone.utc) >= start_dt: continue 
-            except: pass 
+                if datetime.now(timezone.utc) >= start_dt:
+                    continue
+            except:
+                pass
 
-        p_paddy = float(row.get('price_paddy') or 0)
-        p_ladbrokes = float(row.get('price_bet365') or 0)
-        book_price = max(p_paddy, p_ladbrokes)
-        lay_price = float(row.get('lay_price') or 0)
+        pin_price = float(row.get('price_pinnacle') or 0)
         back_price = float(row.get('back_price') or 0)
+        lay_price = float(row.get('lay_price') or 0)
 
-        # --- STRICT STEAMER GATES ---
-        if back_price <= 1.01 or lay_price <= 1.01: continue
-            
-        spread_pct = (lay_price - back_price) / back_price
-        if spread_pct > ALERT_MAX_SPREAD: continue
+        # Calculate exchange mid price
+        mid_price = 0
+        if back_price > 1.01 and lay_price > 1.01:
+            mid_price = (back_price + lay_price) / 2
 
-        price_diff_pct = (book_price - lay_price) / lay_price
-        if price_diff_pct < ALERT_MIN_PRICE_ADVANTAGE: continue
-        # -----------------------------
+        m_id = row.get('market_id', 'uid')
+        runner_name = row.get('runner_name', 'Unknown')
+        runner_key = f"{m_id}_{runner_name}"
 
-        edge = calculate_edge(book_price, lay_price)
-        
-        if edge >= ALERT_EDGE_THRESHOLD:
-            m_id = row.get('market_id', 'uid')
-            sel_id = row.get('selection_id', 'sid')
-            runner_key = f"{m_id}_{sel_id}"
-            
-            if should_alert(runner_key, edge, book_price, lay_price):
-                runner_name = row.get('runner_name', 'Unknown')
-                bookie_name = "PaddyPower" if p_paddy >= p_ladbrokes else "Ladbrokes"
-                edge_pct = round(edge * 100, 2)
-                raw_diff = round(price_diff_pct * 100, 2)
-                
-                sport = row.get('sport', 'NBA')
-                event_name = row.get('event_name', '')
-                event_line = f"📋 {event_name}\n" if event_name else ""
-                msg = (
-                    f"🔥 <b>{sport.upper()} STEAMER: {runner_name}</b>\n"
-                    f"{event_line}\n"
-                    f"🚀 <b>Gap: +{raw_diff}%</b> (Edge {edge_pct}%)\n"
-                    f"🏦 {bookie_name}: <b>{book_price}</b>\n"
-                    f"🔄 Exchange: <b>{back_price} / {lay_price}</b>\n"
-                    f"💰 Vol: £{int(vol)}\n"
-                    f"⏰ {start_time_str}"
-                )
-                
-                if send_telegram_message(msg):
-                    update_alert_history(runner_key, edge, book_price, lay_price)
-                    alerts_sent += 1
+        # Record this tick
+        if runner_key not in _price_history:
+            _price_history[runner_key] = deque(maxlen=STEAMER_WINDOW_TICKS + 1)
+        _price_history[runner_key].append((now, pin_price, mid_price))
+
+        # Check for drop
+        drop = check_price_drop(runner_key, pin_price, mid_price)
+        if not drop:
+            continue
+
+        drop_pct = drop['drop_pct']
+        if not should_alert(runner_key, drop_pct):
+            continue
+
+        # Build alert message
+        source = "PIN" if drop['type'] == 'PIN' else "Exchange"
+        drop_pct_display = round(drop_pct * 100, 1)
+        event_name = row.get('event_name', '')
+        sport = row.get('sport', 'NBA')
+        event_line = f"<b>{event_name}</b>\n" if event_name else ""
+
+        msg = (
+            f"<b>STEAMER: {runner_name}</b>\n"
+            f"{event_line}\n"
+            f"{source} dropped {drop_pct_display}% in ~{STEAMER_WINDOW_TICKS * 5}s\n"
+            f"Was: {drop['old']:.3f}  Now: {drop['new']:.3f}\n"
+            f"\n"
+            f"Sport: {sport}\n"
+            f"Kick-off: {start_time_str}"
+        )
+
+        if send_telegram_message(msg):
+            update_alert_history(runner_key, drop_pct, drop['old'], drop['new'])
+            alerts_sent += 1
+            logger.info(f"STEAMER ALERT: {runner_name} — {source} dropped {drop_pct_display}%")
 
     if alerts_sent > 0:
-        logger.info(f"Sent {alerts_sent} alerts.")
+        logger.info(f"Sent {alerts_sent} steamer alerts.")
