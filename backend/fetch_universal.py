@@ -1387,7 +1387,8 @@ def fetch_betfair():
                                 "start_time": market_info.market_start_time.strftime("%Y-%m-%dT%H:%M:%SZ"),
                                 "in_play": book.inplay,
                                 "market_status": book.status,
-                                "last_updated": update_time
+                                "last_updated": update_time,
+                                "selection_id": runner.selection_id
                             }
 
         except Exception as e:

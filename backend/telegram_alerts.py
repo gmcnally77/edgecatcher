@@ -248,6 +248,13 @@ def run_alert_cycle(supabase_client):
             'cricket': '🏏',
         }.get(sport.lower(), '📉')
 
+        # One-Click Bet link (Betfair selectionId = Paddy Power selectionId)
+        selection_id = row.get('selection_id')
+        bet_link = ""
+        if selection_id:
+            paddy_url = f"https://www.paddypower.com/bet?action=addSelection&selectionId={selection_id}"
+            bet_link = f'\n<a href="{paddy_url}">🔗 BET NOW (PaddyPower)</a>'
+
         msg = (
             f"{sport_emoji} <b>Steamer: {runner_name}</b>\n"
             f"Was: {drop['old']:.3f}  Now: {drop['new']:.3f}\n"
@@ -256,6 +263,7 @@ def run_alert_cycle(supabase_client):
             f"\n"
             f"{source} dropped {drop_pct_display}% in ~{STEAMER_WINDOW_TICKS * 5}s\n"
             f"Kick-off: {start_time_str}"
+            f"{bet_link}"
         )
 
         if send_telegram_message(msg):
