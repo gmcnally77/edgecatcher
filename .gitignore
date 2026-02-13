@@ -1,3 +1,6 @@
+# --- CLAUDE CODE (local config with DB credentials) ---
+.claude/settings.local.json
+
 # --- SECURITY: IGNORE KEYS & CONFIGS ---
 backend/config.py
 config.py
@@ -7,6 +10,9 @@ backend/certs/
 *.crt
 *.csr
 *.pem
+
+# --- SQLITE ---
+*.db
 
 # --- SYSTEM & CACHE ---
 api_cache/
