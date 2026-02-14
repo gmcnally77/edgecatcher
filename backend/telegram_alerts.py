@@ -176,7 +176,7 @@ def should_alert(runner_key, drop_pct):
 
 def run_alert_cycle(supabase_client):
     init_db()
-    check_bot_commands()
+    # check_bot_commands() — replaced by telegram_callback.py thread
 
     try:
         response = supabase_client.table("market_feed") \

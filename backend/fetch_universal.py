@@ -50,6 +50,17 @@ except Exception as e:
     run_arb_scan = None
     logger.warning(f"Arb scanner error: {e}")
 
+# --- TELEGRAM CALLBACK IMPORT ---
+try:
+    from telegram_callback import start_callback_listener
+    logger.info("📲 Telegram callback handler loaded")
+except ImportError as e:
+    start_callback_listener = None
+    logger.warning(f"Telegram callback handler not available: {e}")
+except Exception as e:
+    start_callback_listener = None
+    logger.warning(f"Telegram callback handler error: {e}")
+
 # --- IMPORT CONFIG ---
 try:
     from sports_config import SPORTS_CONFIG, ALIAS_MAP, SCOPE_MODE
@@ -406,6 +417,10 @@ _ao_last_disk_save = 0  # Throttle disk cache saves
 _cached_active_rows = []
 _cached_id_to_row_map = {}
 
+# AO execution context: market_feed_id -> AO params needed for bet placement
+# Populated during _ao_match_all_cached(), read by arb_scanner for EXECUTE ARB button
+_ao_execution_context = {}
+
 def _maybe_save_ao_cache():
     """Save AO cache to disk at most once per 30 seconds."""
     global _ao_last_disk_save
@@ -742,7 +757,10 @@ def _ao_match_all_cached():
             cache_key = f"{sport_id}_{mt}"
             cached = _asianodds_cache.get(cache_key, {})
             if isinstance(cached, dict):
-                all_matches.extend([m for m in cached.values() if m and isinstance(m, dict)])
+                for m in cached.values():
+                    if m and isinstance(m, dict):
+                        m['_market_type'] = mt  # Tag with market type for execution context
+                        all_matches.append(m)
 
         if not all_matches:
             if should_log:
@@ -819,9 +837,22 @@ def _ao_match_all_cached():
                     row_id = row['id']
                     updates[row_id] = {'price_pinnacle': pin_price}
                     ao_matched_this = True
+
+                    # Populate execution context for arb executor
+                    ao_game_id = match.get('Id') or match.get('MatchId') or match.get('GameId')
+                    _ao_execution_context[row_id] = {
+                        'ao_game_id': ao_game_id,
+                        'ao_game_type': 'X',
+                        'ao_is_full_time': 1,
+                        'ao_market_type_id': match.get('_market_type', 1),
+                        'ao_odds_name': 'HomeOdds' if side == 'home' else ('AwayOdds' if side == 'away' else 'DrawOdds'),
+                        'ao_sports_type': sport_id,
+                        'ao_bookie_code': 'PIN' if 'PIN' in parsed_odds else 'SIN',
+                    }
+
                     if should_log:
                         src = 'PIN' if 'PIN' in parsed_odds else 'SIN'
-                        logger.info(f"  {src}: {row['runner_name']} @ {pin_price}")
+                        logger.info(f"  {src}: {row['runner_name']} @ {pin_price} (AO Id={ao_game_id})")
 
             if not ao_matched_this:
                 ao_unmatched.append(f"{home_team} v {away_team}")
@@ -1436,8 +1467,16 @@ def fetch_betfair():
 
 if __name__ == "__main__":
     logger.info("--- STARTING UNIVERSAL ENGINE ---")
+
+    # Start Telegram callback listener for EXECUTE ARB buttons and /status commands
+    if start_callback_listener:
+        try:
+            start_callback_listener()
+        except Exception as e:
+            logger.warning(f"Telegram callback listener failed to start: {e}")
+
     run_spy()
-    
+
     last_keep_alive = time.time()
 
     TICK_TARGET = 5  # Target 5s total cycle time
@@ -1476,7 +1515,7 @@ if __name__ == "__main__":
         # --- ARB SCANNER ---
         if run_arb_scan:
             try:
-                run_arb_scan(supabase)
+                run_arb_scan(supabase, ao_context=_ao_execution_context)
             except Exception as e:
                 logger.error(f"Arb Scan Failed: {e}")
 

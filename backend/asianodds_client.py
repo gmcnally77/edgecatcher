@@ -31,7 +31,7 @@ class AsianOddsClient:
     def _md5_hash(self, text):
         return hashlib.md5(text.encode()).hexdigest()
 
-    def _request(self, method, endpoint, params=None, use_service_url=True):
+    def _request(self, method, endpoint, params=None, json_body=None, use_service_url=True, timeout=60):
         """Make authenticated request to API."""
         base = self.service_url if (use_service_url and self.service_url) else self.BASE_URL
         url = f"{base}/{endpoint}"
@@ -47,9 +47,12 @@ class AsianOddsClient:
 
         try:
             if method == "GET":
-                resp = self.session.get(url, params=params, headers=headers, timeout=60)
+                resp = self.session.get(url, params=params, headers=headers, timeout=timeout)
+            elif json_body is not None:
+                headers["Content-Type"] = "application/json"
+                resp = self.session.post(url, json=json_body, headers=headers, timeout=timeout)
             else:
-                resp = self.session.post(url, params=params, headers=headers, timeout=60)
+                resp = self.session.post(url, params=params, headers=headers, timeout=timeout)
 
             # Handle BOM in response
             text = resp.text.lstrip('\ufeff')
@@ -359,6 +362,129 @@ class AsianOddsClient:
                 best_bookie = bookie
 
         return best_price, best_bookie
+
+    # --- BET PLACEMENT METHODS ---
+
+    def get_placement_info(self, game_id, game_type="X", is_full_time=1, bookies="PIN",
+                           market_type_id=1, odds_format="00", odds_name="HomeOdds",
+                           sports_type=1):
+        """
+        Get placement info before placing a bet. Returns live price, min/max amounts.
+
+        Args:
+            game_id: AO match ID from GetFeeds
+            game_type: "X" for 1X2 moneyline
+            is_full_time: 1 for full-time markets
+            bookies: "PIN" or "SIN"
+            market_type_id: 0=Live, 1=Today, 2=Early
+            odds_format: "00" for decimal
+            odds_name: "HomeOdds" or "AwayOdds"
+            sports_type: AO sport ID (1=Soccer, 2=Basketball, 9=MMA)
+
+        Returns:
+            dict: Raw API response with Code and Result
+        """
+        if not self.ensure_authenticated():
+            return None
+
+        params = {
+            "GameId": game_id,
+            "GameType": game_type,
+            "IsFullTime": is_full_time,
+            "Bookies": bookies,
+            "MarketTypeId": market_type_id,
+            "OddsFormat": odds_format,
+            "OddsName": odds_name,
+            "SportsType": sports_type,
+        }
+
+        data = self._request("GET", "GetPlacementInfo", params, timeout=10)
+        if not data:
+            logger.error("GetPlacementInfo: No response")
+            return None
+
+        if data.get("Code") != 0:
+            code = data.get("Code")
+            logger.warning(f"GetPlacementInfo failed: Code={code}")
+
+        return data
+
+    def place_bet(self, game_id, game_type="X", is_full_time=1, market_type_id=1,
+                  odds_format="00", odds_name="HomeOdds", sports_type=1,
+                  bookie_odds=0, amount=0, place_bet_id=None):
+        """
+        Place a bet via AO.
+
+        Args:
+            game_id: AO match ID
+            game_type: "X" for 1X2
+            is_full_time: 1 for full-time
+            market_type_id: 0=Live, 1=Today, 2=Early
+            odds_format: "00" for decimal
+            odds_name: "HomeOdds" or "AwayOdds"
+            sports_type: AO sport ID
+            bookie_odds: The price to bet at
+            amount: Stake amount
+            place_bet_id: Optional unique ID for idempotency
+
+        Returns:
+            dict: Raw API response with Code and Result (contains BetPlacementReference)
+        """
+        if not self.ensure_authenticated():
+            return None
+
+        import uuid
+        if not place_bet_id:
+            place_bet_id = str(uuid.uuid4())
+
+        params = {
+            "GameId": game_id,
+            "GameType": game_type,
+            "IsFullTime": is_full_time,
+            "MarketTypeId": market_type_id,
+            "OddsFormat": odds_format,
+            "OddsName": odds_name,
+            "SportsType": sports_type,
+            "BookieOdds": bookie_odds,
+            "Amount": amount,
+            "PlaceBetId": place_bet_id,
+            "AcceptChangedOdds": 0,
+        }
+
+        logger.info(f"PlaceBet: GameId={game_id}, {odds_name} @ {bookie_odds}, amount={amount}")
+        data = self._request("POST", "PlaceBet", params, timeout=15)
+
+        if not data:
+            logger.error("PlaceBet: No response")
+            return None
+
+        if data.get("Code") != 0:
+            code = data.get("Code")
+            result = data.get("Result") or {}
+            logger.error(f"PlaceBet failed: Code={code}, Result={result}")
+
+        return data
+
+    def get_bet_by_reference(self, bet_reference):
+        """
+        Check bet status by placement reference.
+
+        Args:
+            bet_reference: BetPlacementReference from PlaceBet response
+
+        Returns:
+            dict: Raw API response with Code and Result (contains bet status)
+        """
+        if not self.ensure_authenticated():
+            return None
+
+        params = {"BetPlacementReference": bet_reference}
+        data = self._request("GET", "GetBetByReference", params, timeout=10)
+
+        if not data:
+            logger.warning(f"GetBetByReference: No response for ref={bet_reference}")
+
+        return data
 
 
 # Singleton instance

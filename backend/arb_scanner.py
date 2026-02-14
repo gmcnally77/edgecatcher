@@ -9,6 +9,10 @@ import logging
 from datetime import datetime, timezone, timedelta
 
 from telegram_alerts import send_telegram_message
+try:
+    from telegram_callback import register_pending_arb
+except ImportError:
+    register_pending_arb = None
 
 logger = logging.getLogger(__name__)
 
@@ -140,7 +144,7 @@ def scan_arbs(supabase_client):
     """Scan market_feed for arb opportunities. Returns sorted list."""
     try:
         response = supabase_client.table('market_feed') \
-            .select('id,sport,event_name,runner_name,price_pinnacle,lay_price,back_price,volume,start_time,last_updated') \
+            .select('id,sport,event_name,runner_name,price_pinnacle,lay_price,back_price,volume,start_time,last_updated,market_id,selection_id') \
             .neq('market_status', 'CLOSED') \
             .not_.is_('price_pinnacle', 'null') \
             .not_.is_('lay_price', 'null') \
@@ -202,6 +206,8 @@ def scan_arbs(supabase_client):
                 'volume': int(row.get('volume') or 0),
                 'last_updated': row.get('last_updated', ''),
                 'start_time': row.get('start_time', ''),
+                'market_id': row.get('market_id'),
+                'selection_id': row.get('selection_id'),
             })
 
     return sorted(arbs, key=lambda x: -x['raw_margin_pct'])
@@ -282,8 +288,10 @@ def scan_churns(supabase_client):
     return sorted(churns, key=lambda x: x['cost_per_100'])
 
 
-def run_arb_scan(supabase_client):
-    """Main entry point — call on every main loop tick."""
+def run_arb_scan(supabase_client, ao_context=None):
+    """Main entry point — call on every main loop tick.
+    ao_context: dict mapping market_feed_id -> AO execution params (from _ao_execution_context)
+    """
     if not ARB_ENABLED:
         return
 
@@ -332,7 +340,31 @@ def run_arb_scan(supabase_client):
                     f"💰 BF Vol: £{arb['volume']:,}\n"
                     f"⏰ {arb['start_time'][:16] if arb['start_time'] else '?'}"
                 )
-                send_telegram_message(msg)
+
+                # Register pending arb and add EXECUTE button if AO context available
+                reply_markup = None
+                arb_id = str(mid)
+                ao_ctx = (ao_context or {}).get(mid)
+                if ao_ctx and register_pending_arb and arb['market_id'] and arb['selection_id']:
+                    exec_context = {
+                        'market_feed_id': mid,
+                        'sport': arb['sport'],
+                        'event_name': arb['event'],
+                        'runner_name': arb['runner'],
+                        'market_id': arb['market_id'],
+                        'selection_id': arb['selection_id'],
+                        'pin_back': arb['pin_back'],
+                        'bf_lay': arb['bf_lay'],
+                        **ao_ctx,
+                    }
+                    register_pending_arb(arb_id, exec_context)
+                    reply_markup = {
+                        "inline_keyboard": [[
+                            {"text": "⚡ EXECUTE ARB", "callback_data": f"exec_arb:{arb_id}"}
+                        ]]
+                    }
+
+                send_telegram_message(msg, reply_markup=reply_markup)
         else:
             # Update peak
             if arb['margin_pct'] > _open_arbs[mid]['peak_margin']:
