@@ -79,12 +79,14 @@ def update_alert_history(runner_key, drop_pct, old_price, new_price):
         logger.error(f"DB Write Failed! Alerts will duplicate. Error: {e}")
 
 # --- TELEGRAM BOT UTILS ---
-def send_telegram_message(text):
+def send_telegram_message(text, reply_markup=None):
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
         return False
 
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     payload = { "chat_id": TELEGRAM_CHAT_ID, "text": text, "parse_mode": "HTML" }
+    if reply_markup:
+        payload["reply_markup"] = reply_markup
     try:
         r = requests.post(url, json=payload, timeout=5)
         return r.status_code == 200
@@ -248,12 +250,16 @@ def run_alert_cycle(supabase_client):
             'cricket': '🏏',
         }.get(sport.lower(), '📉')
 
-        # One-Click Bet link (Betfair selectionId = Paddy Power selectionId)
-        selection_id = row.get('selection_id')
-        bet_link = ""
-        if selection_id:
-            paddy_url = f"https://www.paddypower.com/bet?action=addSelection&selectionId={selection_id}"
-            bet_link = f'\n<a href="{paddy_url}">🔗 BET NOW (PaddyPower)</a>'
+        # One-Click Bet button — opens PP event page in the native app
+        # Uses InlineKeyboardButton so Telegram opens via universal link (not in-app browser)
+        paddy_link = row.get('paddy_link')
+        reply_markup = None
+        if paddy_link:
+            reply_markup = {
+                "inline_keyboard": [[
+                    {"text": "🔗 BET NOW (PaddyPower)", "url": paddy_link}
+                ]]
+            }
 
         msg = (
             f"{sport_emoji} <b>Steamer: {runner_name}</b>\n"
@@ -263,10 +269,9 @@ def run_alert_cycle(supabase_client):
             f"\n"
             f"{source} dropped {drop_pct_display}% in ~{STEAMER_WINDOW_TICKS * 5}s\n"
             f"Kick-off: {start_time_str}"
-            f"{bet_link}"
         )
 
-        if send_telegram_message(msg):
+        if send_telegram_message(msg, reply_markup=reply_markup):
             update_alert_history(runner_key, drop_pct, drop['old'], drop['new'])
             alerts_sent += 1
             logger.info(f"STEAMER ALERT: {runner_name} — {source} dropped {drop_pct_display}%")

@@ -1178,6 +1178,9 @@ def run_spy():
                 if p is not None:
                     updates[row_id]['price_paddy'] = p
 
+                # PP event link now sourced from Betfair event ID (shared across Flutter platforms)
+                # No longer needed from Odds API
+
     tracker.report()
 
     # Cache active rows for AO matching phases.
@@ -1374,6 +1377,23 @@ def fetch_betfair():
                         dedup_key = f"{market_info.event.name}_{name}"
                         current_best = best_price_map.get(dedup_key)
 
+                        # Build PP event link from shared Betfair event ID
+                        # PP, Betfair Exchange, Betfair Sports & Sky Bet share event IDs
+                        _PP_SPORT = {'soccer': 'football', 'mma': 'mixed-martial-arts',
+                                     'basketball': 'basketball', 'nfl': 'american-football',
+                                     'tennis': 'tennis', 'baseball': 'baseball',
+                                     'hockey': 'ice-hockey', 'cricket': 'cricket'}
+                        bf_event_id = market_info.event.id if market_info.event else None
+                        paddy_link = None
+                        if bf_event_id:
+                            def _slug(t):
+                                t = re.sub(r'[^a-z0-9\s-]', '', t.lower())
+                                return re.sub(r'\s+', '-', t).strip('-')
+                            sport_slug = _PP_SPORT.get(sport_conf['name'].lower(), sport_conf['name'].lower())
+                            comp_slug = _slug(comp_name)
+                            event_slug = _slug(market_info.event.name)
+                            paddy_link = f"https://www.paddypower.com/{sport_slug}/{comp_slug}/{event_slug}-{bf_event_id}"
+
                         if not current_best or volume > current_best['volume']:
                             best_price_map[dedup_key] = {
                                 "sport": sport_conf['name'],
@@ -1388,7 +1408,8 @@ def fetch_betfair():
                                 "in_play": book.inplay,
                                 "market_status": book.status,
                                 "last_updated": update_time,
-                                "selection_id": runner.selection_id
+                                "selection_id": runner.selection_id,
+                                "paddy_link": paddy_link
                             }
 
         except Exception as e:
