@@ -839,7 +839,8 @@ def _ao_match_all_cached():
                     ao_matched_this = True
 
                     # Populate execution context for arb executor
-                    ao_game_id = match.get('Id') or match.get('MatchId') or match.get('GameId')
+                    # GameId is the per-bet-type ID required by GetPlacementInfo/PlaceBet
+                    ao_game_id = match.get('GameId') or match.get('Id')
                     _ao_execution_context[row_id] = {
                         'ao_game_id': ao_game_id,
                         'ao_game_type': 'X',
@@ -880,6 +881,16 @@ def _ao_match_all_cached():
         for i in range(0, len(data_list), 100):
             supabase.table('market_feed').upsert(data_list[i:i+100], on_conflict='id').execute()
         logger.info(f"AO: {len(updates)} PIN prices written")
+
+    # Persist execution context for test scripts
+    if _ao_execution_context:
+        try:
+            ctx_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'api_cache', 'ao_exec_context.json')
+            import json as _json
+            with open(ctx_file, 'w') as f:
+                _json.dump(_ao_execution_context, f)
+        except Exception:
+            pass
 
     if should_log:
         _ao_last_match_log = now
@@ -1464,6 +1475,10 @@ def fetch_betfair():
             
         except Exception as e:
             logger.error(f"Database Error: {e}")
+
+# Register this module so threads can import it by name (it runs as __main__)
+import sys as _sys
+_sys.modules['fetch_universal'] = _sys.modules[__name__]
 
 if __name__ == "__main__":
     logger.info("--- STARTING UNIVERSAL ENGINE ---")

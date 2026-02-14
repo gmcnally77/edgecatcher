@@ -126,6 +126,117 @@ def _handle_callback_query(callback_query):
         send_telegram_message(f"❌ Execution error: {e}")
 
 
+def _handle_test_bet(args):
+    """
+    /test_bet <runner> — Test GetPlacementInfo from within the running service.
+    Uses the service's live AO session and execution context.
+    """
+    from telegram_alerts import send_telegram_message
+    from fetch_universal import _ao_execution_context, _cached_active_rows
+
+    if not args:
+        send_telegram_message("Usage: /test_bet <runner name>\nExample: /test_bet Serghei Spivac")
+        return
+
+    search = args.lower()
+    ao_ctx = _ao_execution_context
+    active_rows = _cached_active_rows
+
+    logger.info(f"test_bet: search='{search}', ctx_size={len(ao_ctx)}, rows={len(active_rows)}")
+
+    # Find matching row in execution context
+    match_id = None
+    match_ctx = None
+    match_row = None
+    for row_id, ctx in ao_ctx.items():
+        row = next((r for r in active_rows if str(r['id']) == str(row_id)), None)
+        if not row:
+            continue
+        if search in (row.get('runner_name') or '').lower():
+            match_id = row_id
+            match_ctx = ctx
+            match_row = row
+            break
+
+    if not match_ctx:
+        available = []
+        for row_id, ctx in ao_ctx.items():
+            row = next((r for r in active_rows if str(r['id']) == str(row_id)), None)
+            if row:
+                available.append(f"  {row['runner_name']} ({row['event_name']})")
+        msg = f"No match for '{args}' in AO execution context.\n"
+        if available:
+            msg += f"\nAvailable ({len(available)}):\n" + "\n".join(available[:10])
+        else:
+            msg += "Execution context is empty."
+        send_telegram_message(msg)
+        return
+
+    send_telegram_message(
+        f"🧪 <b>Testing GetPlacementInfo</b>\n"
+        f"Runner: {match_row['runner_name']}\n"
+        f"Event: {match_row['event_name']}\n"
+        f"AO GameId: {match_ctx.get('ao_game_id')}\n"
+        f"OddsName: {match_ctx.get('ao_odds_name')}\n"
+        f"MarketType: {match_ctx.get('ao_market_type_id')}\n"
+        f"SportsType: {match_ctx.get('ao_sports_type')}\n"
+        f"Bookie: {match_ctx.get('ao_bookie_code')}"
+    )
+
+    # Call GetPlacementInfo using the service's AO client
+    try:
+        from asianodds_client import get_client
+        ao = get_client()
+        if not ao:
+            send_telegram_message("AO client not available")
+            return
+
+        result = ao.get_placement_info(
+            game_id=match_ctx['ao_game_id'],
+            game_type=match_ctx.get('ao_game_type', 'X'),
+            is_full_time=match_ctx.get('ao_is_full_time', 1),
+            bookies=match_ctx.get('ao_bookie_code', 'PIN'),
+            market_type_id=match_ctx.get('ao_market_type_id', 1),
+            odds_format='00',
+            odds_name=match_ctx.get('ao_odds_name', 'HomeOdds'),
+            sports_type=match_ctx.get('ao_sports_type', 1)
+        )
+
+        if not result:
+            send_telegram_message("GetPlacementInfo: No response")
+            return
+
+        code = result.get('Code')
+        if code != 0:
+            msg = result.get('Result', {})
+            if isinstance(msg, dict):
+                msg = msg.get('TextMessage', '') or msg.get('Message', '')
+            send_telegram_message(f"GetPlacementInfo failed: Code={code}\n{msg}")
+            return
+
+        r = result.get('Result') or {}
+        pd = r.get('OddsPlacementData') or r.get('PlacementData') or r.get('Data') or [{}]
+        if isinstance(pd, list) and pd:
+            item = pd[0]
+        else:
+            item = pd if isinstance(pd, dict) else {}
+
+        live_price = item.get('Odds') or item.get('Price') or 0
+        min_amt = item.get('MinimumAmount') or item.get('MinAmount') or 0
+        max_amt = item.get('MaximumAmount') or item.get('MaxAmount') or 0
+
+        send_telegram_message(
+            f"✅ <b>GetPlacementInfo OK</b>\n\n"
+            f"Live price: {live_price}\n"
+            f"Min stake: {min_amt}\n"
+            f"Max stake: {max_amt}\n"
+            f"Bookie: {match_ctx.get('ao_bookie_code', 'PIN')}"
+        )
+
+    except Exception as e:
+        send_telegram_message(f"GetPlacementInfo error: {e}")
+
+
 def _handle_message(message):
     """Handle text commands (replaces check_bot_commands)."""
     text = message.get("text", "").strip()
@@ -137,6 +248,9 @@ def _handle_message(message):
     if text == "/status":
         from telegram_alerts import send_status_report
         send_status_report()
+    elif text.startswith("/test_bet"):
+        args = text[len("/test_bet"):].strip()
+        _handle_test_bet(args)
 
 
 def _callback_loop():

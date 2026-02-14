@@ -3,6 +3,7 @@ AsianOdds API Client
 Handles authentication, session management, and odds fetching.
 """
 import os
+import json
 import hashlib
 import requests
 import time
@@ -112,6 +113,7 @@ class AsianOddsClient:
             return False
 
         logger.info("AsianOdds registration successful")
+        self._save_session()
         return True
 
     def _login_and_register(self):
@@ -122,6 +124,39 @@ class AsianOddsClient:
         if not self.register():
             return False
         return True
+
+    SESSION_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'api_cache', 'ao_session.json')
+
+    def _save_session(self):
+        """Persist session credentials to disk for test scripts."""
+        try:
+            data = {
+                'ao_token': self.ao_token,
+                'ao_key': self.ao_key,
+                'service_url': self.service_url,
+                'saved_at': time.time(),
+            }
+            os.makedirs(os.path.dirname(self.SESSION_FILE), exist_ok=True)
+            with open(self.SESSION_FILE, 'w') as f:
+                json.dump(data, f)
+        except Exception:
+            pass  # Non-critical
+
+    def load_session(self):
+        """Load session credentials from disk. Returns True if loaded and not stale."""
+        try:
+            with open(self.SESSION_FILE) as f:
+                data = json.load(f)
+            if time.time() - data.get('saved_at', 0) > 240:  # 4 min staleness
+                return False
+            self.ao_token = data['ao_token']
+            self.ao_key = data['ao_key']
+            self.service_url = data['service_url']
+            self.last_activity = data.get('saved_at', time.time())
+            logger.info(f"Loaded AO session from disk (age={time.time() - data['saved_at']:.0f}s)")
+            return True
+        except Exception:
+            return False
 
     def ensure_authenticated(self):
         """Ensure we have a valid session, re-auth if needed. Retries up to 3 times."""
@@ -367,12 +402,12 @@ class AsianOddsClient:
 
     def get_placement_info(self, game_id, game_type="X", is_full_time=1, bookies="PIN",
                            market_type_id=1, odds_format="00", odds_name="HomeOdds",
-                           sports_type=1):
+                           sports_type=1, timeout=30):
         """
         Get placement info before placing a bet. Returns live price, min/max amounts.
 
         Args:
-            game_id: AO match ID from GetFeeds
+            game_id: AO GameId from GetFeeds (NOT the match Id)
             game_type: "X" for 1X2 moneyline
             is_full_time: 1 for full-time markets
             bookies: "PIN" or "SIN"
@@ -380,6 +415,7 @@ class AsianOddsClient:
             odds_format: "00" for decimal
             odds_name: "HomeOdds" or "AwayOdds"
             sports_type: AO sport ID (1=Soccer, 2=Basketball, 9=MMA)
+            timeout: Bookie response timeout in seconds (default 30)
 
         Returns:
             dict: Raw API response with Code and Result
@@ -396,9 +432,10 @@ class AsianOddsClient:
             "OddsFormat": odds_format,
             "OddsName": odds_name,
             "SportsType": sports_type,
+            "Timeout": timeout,
         }
 
-        data = self._request("GET", "GetPlacementInfo", params, timeout=10)
+        data = self._request("POST", "GetPlacementInfo", json_body=params, timeout=90)
         if not data:
             logger.error("GetPlacementInfo: No response")
             return None
@@ -452,7 +489,7 @@ class AsianOddsClient:
         }
 
         logger.info(f"PlaceBet: GameId={game_id}, {odds_name} @ {bookie_odds}, amount={amount}")
-        data = self._request("POST", "PlaceBet", params, timeout=15)
+        data = self._request("POST", "PlaceBet", json_body=params, timeout=90)
 
         if not data:
             logger.error("PlaceBet: No response")
