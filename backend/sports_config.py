@@ -77,6 +77,16 @@ ALIAS_MAP = {
     "klaudiasygula": ["ksygula", "klaudiasygua", "sygula"],
     "klaudiasygua": ["klaudiasygula"],
     "ksygula": ["klaudiasygula"],
+    "philrowe": ["philiprowe"],
+    "philiprowe": ["philrowe"],
+    "sergheispivac": ["sergeispivak", "sergeispivac", "sergheispivak"],
+    "sergeispivak": ["sergheispivac", "sergeispivac", "sergheispivak"],
+    "sergeispivac": ["sergheispivac", "sergeispivak", "sergheispivak"],
+    "sergheispivak": ["sergheispivac", "sergeispivak", "sergeispivac"],
+    "geoffneal": ["geoffreyneal"],
+    "geoffreyneal": ["geoffneal"],
+    "joepyfer": ["josephpyfer"],
+    "josephpyfer": ["joepyfer"],
 
     # NFL (Standardized to handle market vs. full names)
     "washington": ["washingtoncommanders", "commanders"],
