@@ -41,9 +41,16 @@ def implied_prob(price):
 
 
 def _trim_history(history, now):
-    """Remove entries older than STEAM_WINDOW."""
+    """Remove entries older than STEAM_WINDOW, but keep the most recent
+    pre-window observation as an anchor baseline. This prevents baseline
+    loss when AO doesn't send a delta for longer than the window."""
     cutoff = now - STEAM_WINDOW
-    return [(t, p) for t, p in history if t >= cutoff]
+    in_window = [(t, p) for t, p in history if t >= cutoff]
+    pre_window = [(t, p) for t, p in history if t < cutoff]
+    # Keep the most recent pre-window entry as anchor
+    if pre_window:
+        return [pre_window[-1]] + in_window
+    return in_window
 
 
 def record_pin_price(row_id, price, metadata):

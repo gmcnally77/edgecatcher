@@ -158,17 +158,27 @@ record_pin_price(row_id, 12.00, META)
 test("Over-10.0 price ignored", row_id not in _pin_history)
 
 
-# ── Test 9: History trimming ──
+# ── Test 9: History trimming (anchor preservation) ──
 print("\n[9] History trimming")
 now = time.time()
 history = [
-    (now - STEAM_WINDOW - 100, 2.50),  # stale — should be trimmed
+    (now - STEAM_WINDOW - 200, 2.55),  # old stale — trimmed
+    (now - STEAM_WINDOW - 100, 2.50),  # most recent pre-window — kept as anchor
     (now - STEAM_WINDOW + 10, 2.45),   # within window
     (now - 10, 2.40),                   # recent
 ]
 trimmed = _trim_history(history, now)
-test("Stale entry trimmed", len(trimmed) == 2)
-test("Newest entries kept", trimmed[0][1] == 2.45 and trimmed[1][1] == 2.40)
+test("Keeps anchor + in-window entries", len(trimmed) == 3)
+test("Anchor is most recent pre-window", trimmed[0][1] == 2.50)
+test("In-window entries preserved", trimmed[1][1] == 2.45 and trimmed[2][1] == 2.40)
+
+# All entries stale — keep newest as anchor
+history_all_stale = [
+    (now - STEAM_WINDOW - 300, 2.00),
+    (now - STEAM_WINDOW - 100, 1.95),
+]
+trimmed_stale = _trim_history(history_all_stale, now)
+test("All stale: keeps newest as anchor", len(trimmed_stale) == 1 and trimmed_stale[0][1] == 1.95)
 
 
 # ── Test 10: Not enough history (single point) ──
