@@ -979,7 +979,7 @@ def _ao_match_all_cached():
                                 f"⏰ {start_time_str[:16] if start_time_str else '?'}"
                             )
 
-                            # Build EXECUTE ARB button with AO context
+                            # EXECUTE ARB button — wired to arb_executor for two-leg placement
                             reply_markup = None
                             arb_id = str(row_id)
                             ao_ctx = _ao_execution_context.get(row_id)
