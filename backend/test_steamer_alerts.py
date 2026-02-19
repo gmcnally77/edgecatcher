@@ -13,9 +13,10 @@ os.environ["TELEGRAM_BOT_TOKEN"] = ""
 os.environ["TELEGRAM_CHAT_ID"] = ""
 
 from steamer_detector import (
-    implied_prob, _trim_history, _check_and_alert, _maybe_alert,
+    implied_prob, _trim_history, _trim_bf_history, _check_and_alert, _maybe_alert,
     _pin_history, _bf_history, _last_alerted, _metadata_cache,
     record_pin_price, record_bf_price,
+    _format_volume, _build_exchange_link,
     STEAM_THRESHOLD, STEAM_COOLDOWN, STEAM_REALERT_INCREMENT,
     STEAM_WINDOW,
 )
@@ -44,6 +45,16 @@ META = {
     'sport': 'Basketball',
     'start_time': '2026-02-20T00:40:00Z',
     'paddy_link': None,
+}
+
+META_BF = {
+    'runner_name': 'TestRunner',
+    'event_name': 'TeamA v TeamB',
+    'sport': 'Soccer',
+    'start_time': '2026-02-20T00:40:00Z',
+    'paddy_link': None,
+    'volume': 5000,
+    'market_id': '1.234567890',
 }
 
 
@@ -82,14 +93,15 @@ record_pin_price(row_id, 1.95, META)
 test("No alert for small move", (row_id, 'PIN') not in _last_alerted)
 
 
-# ── Test 4: BF detection works ──
+# ── Test 4: BF detection works (with volume) ──
 print("\n[4] BF: 3.00 → 2.60 fires alert")
 reset()
 row_id = "test_row_3"
 now = time.time()
-_bf_history[row_id] = [(now - 300, 3.00)]
-_metadata_cache[row_id] = META
-record_bf_price(row_id, 2.60, META)
+_bf_history[row_id] = [(now - 300, 3.00, 10000)]
+_metadata_cache[row_id] = META_BF
+meta_with_more_vol = dict(META_BF, volume=22000)
+record_bf_price(row_id, 2.60, meta_with_more_vol)
 test("BF alert fired", (row_id, 'BF') in _last_alerted)
 shift = _last_alerted[(row_id, 'BF')]['shift_pp']
 expected = implied_prob(2.60) - implied_prob(3.00)  # 0.385 - 0.333 = 0.052
@@ -159,7 +171,7 @@ test("Over-10.0 price ignored", row_id not in _pin_history)
 
 
 # ── Test 9: History trimming (anchor preservation) ──
-print("\n[9] History trimming")
+print("\n[9] History trimming (PIN 2-tuple)")
 now = time.time()
 history = [
     (now - STEAM_WINDOW - 200, 2.55),  # old stale — trimmed
@@ -179,6 +191,21 @@ history_all_stale = [
 ]
 trimmed_stale = _trim_history(history_all_stale, now)
 test("All stale: keeps newest as anchor", len(trimmed_stale) == 1 and trimmed_stale[0][1] == 1.95)
+
+
+# ── Test 9b: BF history trimming (3-tuple) ──
+print("\n[9b] BF history trimming (3-tuple)")
+now = time.time()
+bf_hist = [
+    (now - STEAM_WINDOW - 200, 2.55, 1000),
+    (now - STEAM_WINDOW - 100, 2.50, 2000),
+    (now - STEAM_WINDOW + 10, 2.45, 3000),
+    (now - 10, 2.40, 5000),
+]
+trimmed_bf = _trim_bf_history(bf_hist, now)
+test("BF: keeps anchor + in-window entries", len(trimmed_bf) == 3)
+test("BF: anchor has volume", trimmed_bf[0] == (bf_hist[1][0], 2.50, 2000))
+test("BF: in-window entries preserved", trimmed_bf[1][2] == 3000 and trimmed_bf[2][2] == 5000)
 
 
 # ── Test 10: Not enough history (single point) ──
@@ -222,7 +249,7 @@ print("\n[13] Cleanup purges finished events")
 reset()
 _pin_history['active_row'] = [(time.time(), 2.00)]
 _pin_history['stale_row'] = [(time.time(), 2.00)]
-_bf_history['stale_row'] = [(time.time(), 2.00)]
+_bf_history['stale_row'] = [(time.time(), 2.00, 5000)]
 _metadata_cache['active_row'] = META
 _metadata_cache['stale_row'] = META
 _last_alerted[('stale_row', 'PIN')] = {'ts': time.time(), 'shift_pp': 0.04}
@@ -243,6 +270,41 @@ test("Stale dedup entry removed", ('stale_row', 'PIN') not in _last_alerted)
 
 # Clean up mock
 del sys.modules['fetch_universal']
+
+
+# ── Test 14: Volume delta calculation ──
+print("\n[14] Volume delta in BF steamer")
+reset()
+row_id = "test_row_vol"
+now = time.time()
+# Seed history with initial volume
+_bf_history[row_id] = [(now - 500, 3.00, 50000)]
+_metadata_cache[row_id] = dict(META_BF, volume=62450)
+record_bf_price(row_id, 2.60, dict(META_BF, volume=62450))
+test("BF volume alert fired", (row_id, 'BF') in _last_alerted)
+# Volume delta = 62450 - 50000 = 12450
+bf_hist = _bf_history[row_id]
+vol_delta = bf_hist[-1][2] - bf_hist[0][2]
+test(f"Volume delta = 12450 (got {vol_delta})", vol_delta == 12450)
+
+
+# ── Test 15: Exchange link builder ──
+print("\n[15] Exchange link builder")
+link = _build_exchange_link({'market_id': '1.234567890', 'sport': 'Soccer'})
+test("Soccer → football slug", link == 'https://www.betfair.com/exchange/plus/football/market/1.234567890')
+
+link_bb = _build_exchange_link({'market_id': '1.111', 'sport': 'Basketball'})
+test("Basketball slug", link_bb == 'https://www.betfair.com/exchange/plus/basketball/market/1.111')
+
+link_none = _build_exchange_link({'market_id': '', 'sport': 'Soccer'})
+test("No market_id → None", link_none is None)
+
+
+# ── Test 16: Volume formatting ──
+print("\n[16] Volume formatting")
+test("£12,450 format", _format_volume(12450) == '\u00a312,450')
+test("£500 format (small)", _format_volume(500) == '\u00a3500')
+test("£1,234,567 format (large)", _format_volume(1234567) == '\u00a31,234,567')
 
 
 # ── Summary ──

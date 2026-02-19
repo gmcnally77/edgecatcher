@@ -28,9 +28,16 @@ STEAM_BF_ENABLED = os.getenv('STEAM_BF_ENABLED', '1') == '1'
 
 # --- IN-MEMORY STATE ---
 _pin_history = {}    # row_id -> [(timestamp, price), ...]
-_bf_history = {}     # row_id -> [(timestamp, price), ...]
+_bf_history = {}     # row_id -> [(timestamp, price, volume), ...]
 _last_alerted = {}   # (row_id, source) -> {'ts': float, 'shift_pp': float}
 _metadata_cache = {} # row_id -> metadata dict (latest)
+
+# Sport slug map for Betfair Exchange links
+_EXCHANGE_SPORT_SLUGS = {
+    'Soccer': 'football',
+    'MMA': 'mixed-martial-arts',
+    'Basketball': 'basketball',
+}
 
 
 def implied_prob(price):
@@ -48,6 +55,16 @@ def _trim_history(history, now):
     in_window = [(t, p) for t, p in history if t >= cutoff]
     pre_window = [(t, p) for t, p in history if t < cutoff]
     # Keep the most recent pre-window entry as anchor
+    if pre_window:
+        return [pre_window[-1]] + in_window
+    return in_window
+
+
+def _trim_bf_history(history, now):
+    """Same anchor logic as _trim_history but for BF 3-tuples (timestamp, price, volume)."""
+    cutoff = now - STEAM_WINDOW
+    in_window = [(t, p, v) for t, p, v in history if t >= cutoff]
+    pre_window = [(t, p, v) for t, p, v in history if t < cutoff]
     if pre_window:
         return [pre_window[-1]] + in_window
     return in_window
@@ -78,16 +95,27 @@ def record_bf_price(row_id, price, metadata):
         return
 
     now = time.time()
+    volume = metadata.get('volume', 0) or 0
     if row_id not in _bf_history:
         _bf_history[row_id] = []
-    _bf_history[row_id].append((now, price))
-    _bf_history[row_id] = _trim_history(_bf_history[row_id], now)
+    _bf_history[row_id].append((now, price, volume))
+    _bf_history[row_id] = _trim_bf_history(_bf_history[row_id], now)
     _metadata_cache[row_id] = metadata
 
-    _check_and_alert(row_id, 'BF', _bf_history[row_id], now)
+    # Compute volume matched during the window
+    history = _bf_history[row_id]
+    volume_matched = 0
+    if len(history) >= 2:
+        volume_matched = history[-1][2] - history[0][2]
+        if volume_matched < 0:
+            volume_matched = 0
+
+    # Extract 2-tuples for _check_and_alert (same interface as PIN)
+    history_2t = [(t, p) for t, p, v in history]
+    _check_and_alert(row_id, 'BF', history_2t, now, volume_matched=volume_matched)
 
 
-def _check_and_alert(row_id, source, history, now):
+def _check_and_alert(row_id, source, history, now, volume_matched=0):
     """Check history for implied prob shift >= threshold, then maybe alert."""
     if len(history) < 2:
         return
@@ -102,10 +130,12 @@ def _check_and_alert(row_id, source, history, now):
     if shift < STEAM_THRESHOLD:
         return
 
-    _maybe_alert(row_id, source, oldest_price, latest_price, shift, oldest_ts, now)
+    _maybe_alert(row_id, source, oldest_price, latest_price, shift, oldest_ts, now,
+                 volume_matched=volume_matched)
 
 
-def _maybe_alert(row_id, source, old_price, new_price, shift, oldest_ts, now):
+def _maybe_alert(row_id, source, old_price, new_price, shift, oldest_ts, now,
+                 volume_matched=0):
     """Apply cooldown/dedup and send alert if appropriate."""
     key = (row_id, source)
     last = _last_alerted.get(key)
@@ -121,7 +151,8 @@ def _maybe_alert(row_id, source, old_price, new_price, shift, oldest_ts, now):
     # Send it — update dedup state regardless of send result to avoid spam on outages
     metadata = _metadata_cache.get(row_id, {})
     _last_alerted[key] = {'ts': now, 'shift_pp': shift}
-    sent = _send_steam_alert(source, old_price, new_price, shift, oldest_ts, now, metadata)
+    sent = _send_steam_alert(source, old_price, new_price, shift, oldest_ts, now, metadata,
+                             volume_matched=volume_matched)
     logger.info(
         f"STEAM ALERT: {source} {metadata.get('runner_name', '?')} "
         f"{old_price:.2f}→{new_price:.2f} ({shift*100:.1f}pp)"
@@ -148,7 +179,25 @@ def _format_kickoff(start_time_str):
         return start_time_str
 
 
-def _send_steam_alert(source, old_price, new_price, shift, oldest_ts, now, metadata):
+def _format_volume(volume):
+    """Format volume as e.g. '£12,450'."""
+    if volume >= 1000:
+        return f"\u00a3{volume:,.0f}"
+    return f"\u00a3{volume:.0f}"
+
+
+def _build_exchange_link(metadata):
+    """Build Betfair Exchange link from market_id and sport."""
+    market_id = metadata.get('market_id', '')
+    sport = metadata.get('sport', '')
+    if not market_id:
+        return None
+    sport_slug = _EXCHANGE_SPORT_SLUGS.get(sport, sport.lower())
+    return f"https://www.betfair.com/exchange/plus/{sport_slug}/market/{market_id}"
+
+
+def _send_steam_alert(source, old_price, new_price, shift, oldest_ts, now, metadata,
+                      volume_matched=0):
     """Format and send a steamer alert via Telegram."""
     runner_name = metadata.get('runner_name', 'Unknown')
     event_name = metadata.get('event_name', '')
@@ -163,21 +212,32 @@ def _send_steam_alert(source, old_price, new_price, shift, oldest_ts, now, metad
         f"<b>{source} STEAM: {runner_name}</b>\n"
         f"{event_name}\n"
         f"\n"
-        f"{source}: {old_price:.2f} → {new_price:.2f} (shortening)\n"
+        f"{source}: {old_price:.2f} \u2192 {new_price:.2f} (shortening)\n"
         f"Shift: +{shift_pp:.1f}pp in {duration}\n"
-        f"Implied: {prob_old:.1f}% → {prob_new:.1f}%\n"
-        f"Kick-off: {_format_kickoff(start_time)}"
+        f"Implied: {prob_old:.1f}% \u2192 {prob_new:.1f}%\n"
     )
 
-    # PP deeplink button
+    # Volume line for BF alerts only
+    if source == 'BF' and volume_matched > 0:
+        msg += f"Matched: {_format_volume(volume_matched)} during move\n"
+
+    msg += f"Kick-off: {_format_kickoff(start_time)}"
+
+    # Build inline keyboard buttons
+    buttons = []
     paddy_link = metadata.get('paddy_link')
-    reply_markup = None
     if paddy_link:
-        reply_markup = {
-            "inline_keyboard": [[
-                {"text": "\U0001f517 BET (PaddyPower)", "url": paddy_link}
-            ]]
-        }
+        buttons.append({"text": "\U0001f517 BET (PaddyPower)", "url": paddy_link})
+
+    # Exchange link for BF alerts
+    if source == 'BF':
+        exchange_link = _build_exchange_link(metadata)
+        if exchange_link:
+            buttons.append({"text": "\U0001f4ca Exchange", "url": exchange_link})
+
+    reply_markup = None
+    if buttons:
+        reply_markup = {"inline_keyboard": [buttons]}
 
     return telegram_alerts.send_telegram_message(msg, reply_markup=reply_markup)
 

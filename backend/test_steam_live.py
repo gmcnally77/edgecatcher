@@ -34,6 +34,8 @@ META_BF = {
     'sport': 'Soccer',
     'start_time': '2026-02-22T15:00:00Z',
     'paddy_link': 'https://www.paddypower.com/football/english-premier-league/arsenal-v-chelsea-87654321',
+    'volume': 62450,
+    'market_id': '1.234567890',
 }
 
 def clear():
@@ -56,12 +58,12 @@ if (row_id, 'PIN') in _last_alerted:
 else:
     print("  FAIL — PIN alert did not fire")
 
-# --- Test 2: BF steamer alert ---
-print("\n[2] Firing synthetic BF STEAM alert (3.00 → 2.60, +5.1pp)...")
+# --- Test 2: BF steamer alert (with volume + exchange link) ---
+print("\n[2] Firing synthetic BF STEAM alert (3.00 → 2.60, +5.1pp, with volume)...")
 clear()
 row_id = "test_bf_synthetic"
 now = time.time()
-_bf_history[row_id] = [(now - 300, 3.00)]
+_bf_history[row_id] = [(now - 300, 3.00, 50000)]
 _metadata_cache[row_id] = META_BF
 record_bf_price(row_id, 2.60, META_BF)
 
@@ -70,4 +72,6 @@ if (row_id, 'BF') in _last_alerted:
 else:
     print("  FAIL — BF alert did not fire")
 
-print("\nCheck Telegram — you should see 2 alerts with PP deeplink buttons.")
+print("\nCheck Telegram — you should see 2 alerts:")
+print("  1) PIN alert with PP deeplink button")
+print("  2) BF alert with PP + Exchange buttons, and 'Matched: £12,450' line")

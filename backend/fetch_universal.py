@@ -1621,6 +1621,8 @@ def fetch_betfair():
                     'sport': item.get('sport', ''),
                     'start_time': item.get('start_time', ''),
                     'paddy_link': item.get('paddy_link'),
+                    'volume': item.get('volume', 0),
+                    'market_id': item.get('market_id', ''),
                 })
 
     if best_price_map:
