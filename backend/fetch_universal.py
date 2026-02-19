@@ -737,6 +737,7 @@ def _ao_match_all_cached():
         return
 
     updates = {}
+    candidates = {}  # row_id -> best candidate (closest PIN price to BF exchange)
     now = time.time()
     should_log = (now - _ao_last_match_log) > 30  # Full logging every 30s
 
@@ -805,6 +806,8 @@ def _ao_match_all_cached():
 
             ao_has_pin += 1
             ao_matched_this = False
+            ao_game_id = match.get('GameId') or match.get('Id')
+            ao_league = match.get('LeagueName', '')
 
             for row in _cached_active_rows:
                 if row['sport'] != sport_name:
@@ -835,25 +838,32 @@ def _ao_match_all_cached():
 
                 if pin_price and pin_price > 1.01:
                     row_id = row['id']
-                    updates[row_id] = {'price_pinnacle': pin_price}
+                    bf_back = row.get('back_price', 0)
+
+                    # Compute deviation from BF exchange price (lower = better match)
+                    deviation = abs(pin_price - bf_back) if bf_back > 1.0 else 999
+
+                    # Keep best candidate per row: prefer AO event whose PIN price
+                    # is closest to BF exchange (prevents cross-competition collisions)
+                    prev = candidates.get(row_id)
+                    if prev is None or deviation < prev['deviation']:
+                        if prev is not None and prev['ao_game_id'] != ao_game_id and should_log:
+                            logger.warning(
+                                f"AO duplicate match: {row['runner_name']} — "
+                                f"replacing AO Id={prev['ao_game_id']} (dev={prev['deviation']:.3f}) "
+                                f"with AO Id={ao_game_id} (dev={deviation:.3f}, league={ao_league})"
+                            )
+                        candidates[row_id] = {
+                            'price_pinnacle': pin_price,
+                            'deviation': deviation,
+                            'ao_game_id': ao_game_id,
+                            'ao_league': ao_league,
+                            'side': side,
+                            'parsed_odds': parsed_odds,
+                            'match': match,
+                            'runner_name': row['runner_name'],
+                        }
                     ao_matched_this = True
-
-                    # Populate execution context for arb executor
-                    # GameId is the per-bet-type ID required by GetPlacementInfo/PlaceBet
-                    ao_game_id = match.get('GameId') or match.get('Id')
-                    _ao_execution_context[row_id] = {
-                        'ao_game_id': ao_game_id,
-                        'ao_game_type': 'X',
-                        'ao_is_full_time': 1,
-                        'ao_market_type_id': match.get('_market_type', 1),
-                        'ao_odds_name': 'HomeOdds' if side == 'home' else ('AwayOdds' if side == 'away' else 'DrawOdds'),
-                        'ao_sports_type': sport_id,
-                        'ao_bookie_code': 'PIN' if 'PIN' in parsed_odds else 'SIN',
-                    }
-
-                    if should_log:
-                        src = 'PIN' if 'PIN' in parsed_odds else 'SIN'
-                        logger.info(f"  {src}: {row['runner_name']} @ {pin_price} (AO Id={ao_game_id})")
 
             if not ao_matched_this:
                 ao_unmatched.append(f"{home_team} v {away_team}")
@@ -864,6 +874,30 @@ def _ao_match_all_cached():
             logger.info(f"AO {sport_name}: {matched_count}/{ao_has_pin} PIN matched, {len(sport_rows)} DB rows")
             if ao_unmatched:
                 logger.debug(f"AO {sport_name}: {len(ao_unmatched)} unmatched (non-target leagues): {ao_unmatched[:5]}")
+
+    # --- RESOLVE BEST CANDIDATES → updates + execution context ---
+    for row_id, cand in candidates.items():
+        updates[row_id] = {'price_pinnacle': cand['price_pinnacle']}
+
+        ao_game_id = cand['ao_game_id']
+        side = cand['side']
+        parsed_odds = cand['parsed_odds']
+        match_data = cand['match']
+
+        _ao_execution_context[row_id] = {
+            'ao_game_id': ao_game_id,
+            'ao_game_type': 'X',
+            'ao_is_full_time': 1,
+            'ao_market_type_id': match_data.get('_market_type', 1),
+            'ao_odds_name': 'HomeOdds' if side == 'home' else ('AwayOdds' if side == 'away' else 'DrawOdds'),
+            'ao_sports_type': ASIANODDS_SPORT_MAP.get(
+                next((r['sport'] for r in _cached_active_rows if r['id'] == row_id), ''), 1),
+            'ao_bookie_code': 'PIN' if 'PIN' in parsed_odds else 'SIN',
+        }
+
+        if should_log:
+            src = 'PIN' if 'PIN' in parsed_odds else 'SIN'
+            logger.info(f"  {src}: {cand['runner_name']} @ {cand['price_pinnacle']} (AO Id={ao_game_id})")
 
     # --- WRITE PIN PRICES TO DB ---
     if updates:
@@ -961,7 +995,8 @@ def run_spy():
             'runner_name': row.get('runner_name'),
             'norm_runner': norm_func(row.get('runner_name')),
             'norm_event': norm_func(row.get('event_name')),
-            'start_time': start_dt
+            'start_time': start_dt,
+            'back_price': float(row.get('back_price') or 0),
         })
 
         # IMPORTANT:
