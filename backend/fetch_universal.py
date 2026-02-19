@@ -50,6 +50,17 @@ except Exception as e:
     run_arb_scan = None
     logger.warning(f"Arb scanner error: {e}")
 
+# --- STEAMER DETECTOR IMPORT ---
+try:
+    import steamer_detector
+    logger.info("📈 Steamer detector loaded")
+except ImportError as e:
+    steamer_detector = None
+    logger.warning(f"Steamer detector not available: {e}")
+except Exception as e:
+    steamer_detector = None
+    logger.warning(f"Steamer detector error: {e}")
+
 # --- TELEGRAM CALLBACK IMPORT ---
 try:
     from telegram_callback import start_callback_listener
@@ -879,6 +890,17 @@ def _ao_match_all_cached():
     for row_id, cand in candidates.items():
         updates[row_id] = {'price_pinnacle': cand['price_pinnacle']}
 
+        # --- STEAMER DETECTION: record PIN price at source ---
+        if steamer_detector:
+            orig_row = _cached_id_to_row_map.get(row_id, {})
+            steamer_detector.record_pin_price(row_id, cand['price_pinnacle'], {
+                'runner_name': cand['runner_name'],
+                'event_name': orig_row.get('event_name', ''),
+                'sport': orig_row.get('sport', ''),
+                'start_time': orig_row.get('start_time', ''),
+                'paddy_link': orig_row.get('paddy_link'),
+            })
+
         ao_game_id = cand['ao_game_id']
         side = cand['side']
         parsed_odds = cand['parsed_odds']
@@ -1499,6 +1521,21 @@ def fetch_betfair():
             logger.error("🛑 CRITICAL: NBA Scope active, but 0 Basketball markets were staged for DB sync!")
     # [GUARDRAIL END]
 
+    # --- STEAMER DETECTION: record BF prices at source ---
+    if steamer_detector and best_price_map:
+        bf_row_lookup = {f"{r.get('event_name')}_{r.get('runner_name')}": rid
+                         for rid, r in _cached_id_to_row_map.items()}
+        for dedup_key, item in best_price_map.items():
+            row_id = bf_row_lookup.get(dedup_key)
+            if row_id and item['back_price'] > 1.01:
+                steamer_detector.record_bf_price(row_id, item['back_price'], {
+                    'runner_name': item.get('runner_name', ''),
+                    'event_name': item.get('event_name', ''),
+                    'sport': item.get('sport', ''),
+                    'start_time': item.get('start_time', ''),
+                    'paddy_link': item.get('paddy_link'),
+                })
+
     if best_price_map:
         try:
             final_data = list(best_price_map.values())
@@ -1556,11 +1593,12 @@ if __name__ == "__main__":
             run_spy()
             last_spy_run = time.time()
 
-        # --- INDEPENDENCE V4 ALERTS ---
-        try:
-            telegram_alerts.run_alert_cycle(supabase)
-        except Exception as e:
-            logger.error(f"Alert Cycle Failed: {e}")
+        # --- STEAMER CLEANUP (purge finished events) ---
+        if steamer_detector:
+            try:
+                steamer_detector.cleanup_finished_events()
+            except Exception as e:
+                logger.error(f"Steamer cleanup failed: {e}")
 
         # --- ARB SCANNER ---
         if run_arb_scan:

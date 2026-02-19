@@ -1,6 +1,6 @@
 """
-Test script for steamer price drop detection.
-Simulates price ticks and verifies alerts fire correctly.
+Test script for steamer_detector module.
+Tests implied probability math, threshold detection, cooldown/dedup logic.
 
 Run: python backend/test_steamer_alerts.py
 """
@@ -8,16 +8,17 @@ import time
 import sys
 import os
 
-# Prevent actual Telegram sends and DB writes during tests
+# Prevent actual Telegram sends during tests
 os.environ["TELEGRAM_BOT_TOKEN"] = ""
 os.environ["TELEGRAM_CHAT_ID"] = ""
 
-from telegram_alerts import (
-    _price_history, check_price_drop, should_alert,
-    STEAMER_DROP_PCT, STEAMER_WINDOW_TICKS,
-    update_alert_history, get_last_alert, init_db, DB_FILE
+from steamer_detector import (
+    implied_prob, _trim_history, _check_and_alert, _maybe_alert,
+    _pin_history, _bf_history, _last_alerted, _metadata_cache,
+    record_pin_price, record_bf_price,
+    STEAM_THRESHOLD, STEAM_COOLDOWN, STEAM_REALERT_INCREMENT,
+    STEAM_WINDOW,
 )
-from collections import deque
 
 passed = 0
 failed = 0
@@ -31,153 +32,207 @@ def test(name, condition):
         print(f"  FAIL  {name}")
         failed += 1
 
-def reset_history():
-    _price_history.clear()
+def reset():
+    _pin_history.clear()
+    _bf_history.clear()
+    _last_alerted.clear()
+    _metadata_cache.clear()
 
-def build_history(runner_key, ticks):
-    """Build price history from list of (pin, mid) tuples, 5s apart."""
-    _price_history[runner_key] = deque(maxlen=STEAMER_WINDOW_TICKS + 1)
-    base_ts = time.time() - (len(ticks) * 5)
-    for i, (pin, mid) in enumerate(ticks):
-        _price_history[runner_key].append((base_ts + i * 5, pin, mid))
-
-
-# ── Test 1: Not enough history ──
-print("\n[1] Not enough history")
-reset_history()
-key = "test_market_TeamA"
-_price_history[key] = deque(maxlen=7)
-_price_history[key].append((time.time(), 2.10, 2.05))
-result = check_price_drop(key, 2.00, 1.95)
-test("Returns None with only 1 tick", result is None)
+META = {
+    'runner_name': 'TestRunner',
+    'event_name': 'TeamA v TeamB',
+    'sport': 'Basketball',
+    'start_time': '2026-02-20T00:40:00Z',
+    'paddy_link': None,
+}
 
 
-# ── Test 2: No drop (stable prices) ──
-print("\n[2] Stable prices — no alert")
-reset_history()
-key = "test_market_TeamB"
-ticks = [(2.10, 2.05)] * 7  # 7 identical ticks
-build_history(key, ticks)
-result = check_price_drop(key, 2.10, 2.05)
-test("Returns None when prices stable", result is None)
+# ── Test 1: Implied probability math ──
+print("\n[1] Implied probability")
+test("1/2.00 = 0.50", abs(implied_prob(2.00) - 0.50) < 0.0001)
+test("1/1.50 = 0.6667", abs(implied_prob(1.50) - 0.6667) < 0.001)
+test("1/4.00 = 0.25", abs(implied_prob(4.00) - 0.25) < 0.0001)
+test("1/1.00 = 0 (edge case)", implied_prob(1.00) == 0.0)
+test("1/0.50 = 0 (invalid)", implied_prob(0.50) == 0.0)
 
 
-# ── Test 3: PIN drops exactly 2% ──
-print("\n[3] PIN drops exactly 2%")
-reset_history()
-key = "test_market_TeamC"
-# Start at 2.10, end at 2.058 = 2% drop
-old_pin = 2.100
-new_pin = old_pin * (1 - STEAMER_DROP_PCT)  # exactly 2% lower
-ticks = [(old_pin, 2.05)] * 6  # 6 ticks at old price
-build_history(key, ticks)
-result = check_price_drop(key, new_pin, 2.05)
-test("Detects PIN drop at threshold", result is not None)
-test("Type is PIN", result and result['type'] == 'PIN')
-test("Old price correct", result and abs(result['old'] - old_pin) < 0.001)
-test("New price correct", result and abs(result['new'] - new_pin) < 0.001)
+# ── Test 2: 2.00 → 1.85 = 4.1pp shift (above 3pp threshold) ──
+print("\n[2] PIN: 2.00 → 1.85 fires alert")
+reset()
+row_id = "test_row_1"
+# Simulate old price 15 min ago
+now = time.time()
+_pin_history[row_id] = [(now - 500, 2.00)]
+_metadata_cache[row_id] = META
+# Record new price — should detect shift
+record_pin_price(row_id, 1.85, META)
+test("Alert was sent (dedup entry created)", (row_id, 'PIN') in _last_alerted)
+shift = _last_alerted[(row_id, 'PIN')]['shift_pp']
+test(f"Shift ~4.1pp (got {shift*100:.1f}pp)", abs(shift - 0.041) < 0.002)
 
 
-# ── Test 4: PIN drops 3% (above threshold) ──
-print("\n[4] PIN drops 3%")
-reset_history()
-key = "test_market_TeamD"
-old_pin = 3.00
-new_pin = 2.91  # 3% drop
-ticks = [(old_pin, 2.95)] * 6
-build_history(key, ticks)
-result = check_price_drop(key, new_pin, 2.95)
-test("Detects 3% PIN drop", result is not None)
-test("Drop pct ~3%", result and abs(result['drop_pct'] - 0.03) < 0.002)
+# ── Test 3: Small move below threshold ──
+print("\n[3] PIN: 2.00 → 1.95 does NOT fire (1.3pp < 3pp)")
+reset()
+row_id = "test_row_2"
+now = time.time()
+_pin_history[row_id] = [(now - 500, 2.00)]
+_metadata_cache[row_id] = META
+record_pin_price(row_id, 1.95, META)
+test("No alert for small move", (row_id, 'PIN') not in _last_alerted)
 
 
-# ── Test 5: PIN drops only 1% (below threshold) ──
-print("\n[5] PIN drops 1% — no alert")
-reset_history()
-key = "test_market_TeamE"
-old_pin = 2.00
-new_pin = 1.98  # 1% drop
-ticks = [(old_pin, 1.95)] * 6
-build_history(key, ticks)
-result = check_price_drop(key, new_pin, 1.95)
-test("No alert for 1% drop", result is None)
+# ── Test 4: BF detection works ──
+print("\n[4] BF: 3.00 → 2.60 fires alert")
+reset()
+row_id = "test_row_3"
+now = time.time()
+_bf_history[row_id] = [(now - 300, 3.00)]
+_metadata_cache[row_id] = META
+record_bf_price(row_id, 2.60, META)
+test("BF alert fired", (row_id, 'BF') in _last_alerted)
+shift = _last_alerted[(row_id, 'BF')]['shift_pp']
+expected = implied_prob(2.60) - implied_prob(3.00)  # 0.385 - 0.333 = 0.052
+test(f"Shift ~5.2pp (got {shift*100:.1f}pp)", abs(shift - expected) < 0.002)
 
 
-# ── Test 6: Exchange mid drops 2.5% ──
-print("\n[6] Exchange mid drops 2.5%")
-reset_history()
-key = "test_market_TeamF"
-old_mid = 4.00
-new_mid = 3.90  # 2.5% drop
-ticks = [(0, old_mid)] * 6  # PIN is 0 (no PIN price), only mid
-build_history(key, ticks)
-result = check_price_drop(key, 0, new_mid)
-test("Detects exchange mid drop", result is not None)
-test("Type is EX", result and result['type'] == 'EX')
-test("Drop pct ~2.5%", result and abs(result['drop_pct'] - 0.025) < 0.002)
+# ── Test 5: Cooldown blocks re-alert ──
+print("\n[5] Cooldown blocks duplicate alert")
+reset()
+row_id = "test_row_4"
+now = time.time()
+# First alert
+_pin_history[row_id] = [(now - 500, 2.00)]
+_metadata_cache[row_id] = META
+record_pin_price(row_id, 1.85, META)
+test("First alert fires", (row_id, 'PIN') in _last_alerted)
+first_ts = _last_alerted[(row_id, 'PIN')]['ts']
+
+# Same-ish move again — should be blocked by cooldown
+record_pin_price(row_id, 1.84, META)
+test("Second alert blocked (same shift)", _last_alerted[(row_id, 'PIN')]['ts'] == first_ts)
 
 
-# ── Test 7: PIN drop takes priority over exchange drop ──
-print("\n[7] Both PIN and EX drop — PIN fires first")
-reset_history()
-key = "test_market_TeamG"
-old_pin, old_mid = 2.50, 2.45
-new_pin = 2.50 * 0.96  # 4% PIN drop
-new_mid = 2.45 * 0.97  # 3% EX drop
-ticks = [(old_pin, old_mid)] * 6
-build_history(key, ticks)
-result = check_price_drop(key, new_pin, new_mid)
-test("PIN fires when both drop", result is not None and result['type'] == 'PIN')
+# ── Test 6: Re-alert when move extends past increment ──
+print("\n[6] Re-alert when move extends by REALERT_INCREMENT")
+reset()
+row_id = "test_row_5"
+now = time.time()
+# First alert: 2.00 → 1.85 = 4.1pp
+_pin_history[row_id] = [(now - 500, 2.00)]
+_metadata_cache[row_id] = META
+record_pin_price(row_id, 1.85, META)
+first_shift = _last_alerted[(row_id, 'PIN')]['shift_pp']
+first_ts = _last_alerted[(row_id, 'PIN')]['ts']
+
+# Extended move: needs first_shift + REALERT_INCREMENT (0.041 + 0.02 = 0.061)
+# 2.00 → 1.62 gives shift ~0.068 (prob: 0.5 → 0.617)
+record_pin_price(row_id, 1.62, META)
+test("Re-alert fires on extended move", _last_alerted[(row_id, 'PIN')]['ts'] > first_ts)
+test("New shift is larger", _last_alerted[(row_id, 'PIN')]['shift_pp'] > first_shift)
 
 
-# ── Test 8: Price rise (not a drop) ──
-print("\n[8] Price rises — no alert")
-reset_history()
-key = "test_market_TeamH"
-ticks = [(2.00, 1.95)] * 6
-build_history(key, ticks)
-result = check_price_drop(key, 2.10, 2.05)  # price went UP
-test("No alert on price rise", result is None)
+# ── Test 7: Expired cooldown allows re-alert ──
+print("\n[7] Expired cooldown allows re-alert")
+reset()
+row_id = "test_row_6"
+now = time.time()
+# Simulate an old alert beyond cooldown
+_last_alerted[(row_id, 'PIN')] = {'ts': now - STEAM_COOLDOWN - 1, 'shift_pp': 0.04}
+_pin_history[row_id] = [(now - 500, 2.00)]
+_metadata_cache[row_id] = META
+record_pin_price(row_id, 1.85, META)
+test("Alert fires after cooldown expired", _last_alerted[(row_id, 'PIN')]['ts'] > now - 10)
 
 
-# ── Test 9: Invalid prices (<=1.01) ignored ──
-print("\n[9] Invalid prices ignored")
-reset_history()
-key = "test_market_TeamI"
-ticks = [(1.00, 1.00)] * 6  # invalid
-build_history(key, ticks)
-result = check_price_drop(key, 0.95, 0.95)
-test("No alert for sub-1.01 prices", result is None)
+# ── Test 8: Prices outside min/max range ignored ──
+print("\n[8] Prices outside range ignored")
+reset()
+row_id = "test_row_7"
+# Price below STEAM_MIN_PRICE (1.10)
+record_pin_price(row_id, 1.05, META)
+test("Sub-1.10 price ignored", row_id not in _pin_history)
+
+# Price above STEAM_MAX_PRICE (10.0)
+record_pin_price(row_id, 12.00, META)
+test("Over-10.0 price ignored", row_id not in _pin_history)
 
 
-# ── Test 10: Dedup cooldown ──
-print("\n[10] Dedup cooldown")
-init_db()
-# Use a unique key each run to avoid leftover DB state
-key = f"test_dedup_{time.time()}"
-# First alert should fire
-test("First alert passes", should_alert(key, 0.03) == True)
-# Simulate saving alert
-update_alert_history(key, 0.03, 2.10, 2.04)
-# Same drop within cooldown should NOT fire
-test("Same drop within cooldown blocked", should_alert(key, 0.03) == False)
-# Bigger drop within cooldown SHOULD fire
-test("Bigger drop within cooldown passes", should_alert(key, 0.06) == True)
+# ── Test 9: History trimming ──
+print("\n[9] History trimming")
+now = time.time()
+history = [
+    (now - STEAM_WINDOW - 100, 2.50),  # stale — should be trimmed
+    (now - STEAM_WINDOW + 10, 2.45),   # within window
+    (now - 10, 2.40),                   # recent
+]
+trimmed = _trim_history(history, now)
+test("Stale entry trimmed", len(trimmed) == 2)
+test("Newest entries kept", trimmed[0][1] == 2.45 and trimmed[1][1] == 2.40)
 
 
-# ── Test 11: Gradual decline over window ──
-print("\n[11] Gradual decline — 0.4% per tick × 6 intervals = ~2.4%")
-reset_history()
-key = "test_market_TeamJ"
-base = 3.00
-# Each tick drops ~0.4%, 7 ticks = 6 intervals = 2.4% total
-ticks = [(base * (1 - 0.004 * i), 0) for i in range(7)]
-build_history(key, ticks)
-current_pin = ticks[-1][0]
-result = check_price_drop(key, current_pin, 0)
-test("Detects gradual decline over window", result is not None)
-if result:
-    test("Drop pct roughly 2.4%", result['drop_pct'] >= 0.02)
+# ── Test 10: Not enough history (single point) ──
+print("\n[10] Not enough history — no alert")
+reset()
+row_id = "test_row_8"
+record_pin_price(row_id, 1.85, META)
+test("No alert with single data point", (row_id, 'PIN') not in _last_alerted)
+
+
+# ── Test 11: Price lengthening (drift) does NOT alert ──
+print("\n[11] Price lengthening (drift) does NOT alert")
+reset()
+row_id = "test_row_9"
+now = time.time()
+_pin_history[row_id] = [(now - 500, 1.85)]
+_metadata_cache[row_id] = META
+record_pin_price(row_id, 2.00, META)  # odds lengthened
+test("No alert on drift (shortening only)", (row_id, 'PIN') not in _last_alerted)
+
+
+# ── Test 12: Gradual shortening over multiple ticks ──
+print("\n[12] Gradual shortening: 3.00 → 2.70 over 10 min")
+reset()
+row_id = "test_row_10"
+now = time.time()
+# Build gradual decline: 3.00, 2.95, 2.90, 2.85, 2.80, 2.75, 2.70
+# prob shift: 1/3.00=0.333 → 1/2.70=0.370 = 3.7pp
+prices = [3.00, 2.95, 2.90, 2.85, 2.80, 2.75, 2.70]
+for i, p in enumerate(prices[:-1]):
+    _pin_history.setdefault(row_id, []).append((now - 600 + i * 100, p))
+_metadata_cache[row_id] = META
+record_pin_price(row_id, 2.70, META)
+test("Gradual 3.7pp move detected", (row_id, 'PIN') in _last_alerted)
+shift = _last_alerted[(row_id, 'PIN')]['shift_pp']
+test(f"Shift ~3.7pp (got {shift*100:.1f}pp)", abs(shift - 0.037) < 0.003)
+
+
+# ── Test 13: Cleanup removes stale entries ──
+print("\n[13] Cleanup purges finished events")
+reset()
+_pin_history['active_row'] = [(time.time(), 2.00)]
+_pin_history['stale_row'] = [(time.time(), 2.00)]
+_bf_history['stale_row'] = [(time.time(), 2.00)]
+_metadata_cache['active_row'] = META
+_metadata_cache['stale_row'] = META
+_last_alerted[('stale_row', 'PIN')] = {'ts': time.time(), 'shift_pp': 0.04}
+
+# Mock fetch_universal._cached_active_rows
+import types
+mock_fu = types.ModuleType('fetch_universal')
+mock_fu._cached_active_rows = [{'id': 'active_row'}]
+sys.modules['fetch_universal'] = mock_fu
+
+from steamer_detector import cleanup_finished_events
+cleanup_finished_events()
+
+test("Active row kept in _pin_history", 'active_row' in _pin_history)
+test("Stale row removed from _pin_history", 'stale_row' not in _pin_history)
+test("Stale row removed from _bf_history", 'stale_row' not in _bf_history)
+test("Stale dedup entry removed", ('stale_row', 'PIN') not in _last_alerted)
+
+# Clean up mock
+del sys.modules['fetch_universal']
 
 
 # ── Summary ──
