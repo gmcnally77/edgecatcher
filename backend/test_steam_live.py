@@ -35,7 +35,7 @@ META_BF = {
     'start_time': '2026-02-22T15:00:00Z',
     'paddy_link': 'https://www.paddypower.com/football/english-premier-league/arsenal-v-chelsea-87654321',
     'volume': 62450,
-    'market_id': '1.234567890',
+    'exchange_link': 'https://www.betfair.com/exchange/plus/en/football/english-premier-league/arsenal-v-chelsea-betting-87654321',
 }
 
 def clear():

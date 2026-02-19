@@ -32,13 +32,6 @@ _bf_history = {}     # row_id -> [(timestamp, price, volume), ...]
 _last_alerted = {}   # (row_id, source) -> {'ts': float, 'shift_pp': float}
 _metadata_cache = {} # row_id -> metadata dict (latest)
 
-# Sport slug map for Betfair Exchange links
-_EXCHANGE_SPORT_SLUGS = {
-    'Soccer': 'football',
-    'MMA': 'mixed-martial-arts',
-    'Basketball': 'basketball',
-}
-
 
 def implied_prob(price):
     """Convert decimal odds to implied probability."""
@@ -186,14 +179,6 @@ def _format_volume(volume):
     return f"\u00a3{volume:.0f}"
 
 
-def _build_exchange_link(metadata):
-    """Build Betfair Exchange link from market_id and sport."""
-    market_id = metadata.get('market_id', '')
-    sport = metadata.get('sport', '')
-    if not market_id:
-        return None
-    sport_slug = _EXCHANGE_SPORT_SLUGS.get(sport, sport.lower())
-    return f"https://www.betfair.com/exchange/plus/{sport_slug}/market/{market_id}"
 
 
 def _send_steam_alert(source, old_price, new_price, shift, oldest_ts, now, metadata,
@@ -230,10 +215,9 @@ def _send_steam_alert(source, old_price, new_price, shift, oldest_ts, now, metad
         buttons.append({"text": "\U0001f517 BET (PaddyPower)", "url": paddy_link})
 
     # Exchange link for BF alerts
-    if source == 'BF':
-        exchange_link = _build_exchange_link(metadata)
-        if exchange_link:
-            buttons.append({"text": "\U0001f4ca Exchange", "url": exchange_link})
+    exchange_link = metadata.get('exchange_link')
+    if source == 'BF' and exchange_link:
+        buttons.append({"text": "\U0001f4ca Exchange", "url": exchange_link})
 
     reply_markup = None
     if buttons:

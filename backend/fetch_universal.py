@@ -1571,6 +1571,7 @@ def fetch_betfair():
                                      'hockey': 'ice-hockey', 'cricket': 'cricket'}
                         bf_event_id = market_info.event.id if market_info.event else None
                         paddy_link = None
+                        exchange_link = None
                         if bf_event_id:
                             def _slug(t):
                                 t = re.sub(r'[^a-z0-9\s-]', '', t.lower())
@@ -1579,6 +1580,7 @@ def fetch_betfair():
                             comp_slug = _slug(comp_name)
                             event_slug = _slug(market_info.event.name)
                             paddy_link = f"https://www.paddypower.com/{sport_slug}/{comp_slug}/{event_slug}-{bf_event_id}"
+                            exchange_link = f"https://www.betfair.com/exchange/plus/en/{sport_slug}/{comp_slug}/{event_slug}-betting-{bf_event_id}"
 
                         if not current_best or volume > current_best['volume']:
                             best_price_map[dedup_key] = {
@@ -1595,7 +1597,8 @@ def fetch_betfair():
                                 "market_status": book.status,
                                 "last_updated": update_time,
                                 "selection_id": runner.selection_id,
-                                "paddy_link": paddy_link
+                                "paddy_link": paddy_link,
+                                "exchange_link": exchange_link
                             }
 
         except Exception as e:
@@ -1622,7 +1625,7 @@ def fetch_betfair():
                     'start_time': item.get('start_time', ''),
                     'paddy_link': item.get('paddy_link'),
                     'volume': item.get('volume', 0),
-                    'market_id': item.get('market_id', ''),
+                    'exchange_link': item.get('exchange_link'),
                 })
 
     if best_price_map:

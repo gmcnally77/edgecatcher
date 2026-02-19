@@ -16,7 +16,7 @@ from steamer_detector import (
     implied_prob, _trim_history, _trim_bf_history, _check_and_alert, _maybe_alert,
     _pin_history, _bf_history, _last_alerted, _metadata_cache,
     record_pin_price, record_bf_price,
-    _format_volume, _build_exchange_link,
+    _format_volume,
     STEAM_THRESHOLD, STEAM_COOLDOWN, STEAM_REALERT_INCREMENT,
     STEAM_WINDOW,
 )
@@ -54,7 +54,7 @@ META_BF = {
     'start_time': '2026-02-20T00:40:00Z',
     'paddy_link': None,
     'volume': 5000,
-    'market_id': '1.234567890',
+    'exchange_link': 'https://www.betfair.com/exchange/plus/en/football/teama-v-teamb-betting-12345',
 }
 
 
@@ -288,16 +288,10 @@ vol_delta = bf_hist[-1][2] - bf_hist[0][2]
 test(f"Volume delta = 12450 (got {vol_delta})", vol_delta == 12450)
 
 
-# ── Test 15: Exchange link builder ──
-print("\n[15] Exchange link builder")
-link = _build_exchange_link({'market_id': '1.234567890', 'sport': 'Soccer'})
-test("Soccer → football slug", link == 'https://www.betfair.com/exchange/plus/football/market/1.234567890')
-
-link_bb = _build_exchange_link({'market_id': '1.111', 'sport': 'Basketball'})
-test("Basketball slug", link_bb == 'https://www.betfair.com/exchange/plus/basketball/market/1.111')
-
-link_none = _build_exchange_link({'market_id': '', 'sport': 'Soccer'})
-test("No market_id → None", link_none is None)
+# ── Test 15: Exchange link passed through metadata ──
+print("\n[15] Exchange link from metadata")
+test("META_BF has exchange_link", META_BF.get('exchange_link') is not None)
+test("META (PIN) has no exchange_link", META.get('exchange_link') is None)
 
 
 # ── Test 16: Volume formatting ──
