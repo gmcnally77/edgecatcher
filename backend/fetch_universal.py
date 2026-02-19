@@ -41,13 +41,18 @@ except Exception as e:
 
 # --- ARB SCANNER IMPORT ---
 try:
-    from arb_scanner import run_arb_scan
+    from arb_scanner import (run_arb_scan, calc_margin as arb_calc_margin,
+                              calc_lay_stake as arb_calc_lay_stake,
+                              ARB_ALERT_MARGIN, ARB_MIN_VOLUME, ARB_MAX_MARGIN,
+                              BETFAIR_COMMISSION as ARB_COMMISSION)
     logger.info("📊 Arb scanner loaded")
 except ImportError as e:
     run_arb_scan = None
+    arb_calc_margin = None
     logger.warning(f"Arb scanner not available: {e}")
 except Exception as e:
     run_arb_scan = None
+    arb_calc_margin = None
     logger.warning(f"Arb scanner error: {e}")
 
 # --- STEAMER DETECTOR IMPORT ---
@@ -63,13 +68,15 @@ except Exception as e:
 
 # --- TELEGRAM CALLBACK IMPORT ---
 try:
-    from telegram_callback import start_callback_listener
+    from telegram_callback import start_callback_listener, register_pending_arb
     logger.info("📲 Telegram callback handler loaded")
 except ImportError as e:
     start_callback_listener = None
+    register_pending_arb = None
     logger.warning(f"Telegram callback handler not available: {e}")
 except Exception as e:
     start_callback_listener = None
+    register_pending_arb = None
     logger.warning(f"Telegram callback handler error: {e}")
 
 # --- IMPORT CONFIG ---
@@ -431,6 +438,10 @@ _cached_id_to_row_map = {}
 # AO execution context: market_feed_id -> AO params needed for bet placement
 # Populated during _ao_match_all_cached(), read by arb_scanner for EXECUTE ARB button
 _ao_execution_context = {}
+
+# Source-level arb detection cooldown: row_id -> timestamp of last alert
+_arb_alert_cooldown = {}
+ARB_ALERT_COOLDOWN_SECONDS = 60
 
 def _maybe_save_ao_cache():
     """Save AO cache to disk at most once per 30 seconds."""
@@ -920,6 +931,82 @@ def _ao_match_all_cached():
         if should_log:
             src = 'PIN' if 'PIN' in parsed_odds else 'SIN'
             logger.info(f"  {src}: {cand['runner_name']} @ {cand['price_pinnacle']} (AO Id={ao_game_id})")
+
+        # --- SOURCE-LEVEL ARB DETECTION ---
+        if arb_calc_margin:
+            orig_row = _cached_id_to_row_map.get(row_id, {})
+            lay_price = float(orig_row.get('lay_price') or 0)
+            pin_price = cand['price_pinnacle']
+            volume = int(orig_row.get('volume') or 0)
+
+            if lay_price > 1.01 and pin_price > 1.01:
+                net_margin = arb_calc_margin(pin_price, lay_price)
+
+                if (net_margin >= ARB_ALERT_MARGIN
+                        and net_margin <= ARB_MAX_MARGIN
+                        and volume >= ARB_MIN_VOLUME):
+
+                    # Start time guard — skip if event already started
+                    start_time_str = orig_row.get('start_time', '')
+                    already_started = False
+                    if start_time_str:
+                        try:
+                            start_dt = datetime.fromisoformat(start_time_str.replace('Z', '+00:00'))
+                            if datetime.now(timezone.utc) >= start_dt:
+                                already_started = True
+                        except (ValueError, TypeError):
+                            pass
+
+                    if not already_started:
+                        # Cooldown — don't re-alert same runner within 60s
+                        last_alert = _arb_alert_cooldown.get(row_id, 0)
+                        if now - last_alert >= ARB_ALERT_COOLDOWN_SECONDS:
+                            _arb_alert_cooldown[row_id] = now
+                            margin_pct = round(net_margin * 100, 3)
+                            pnl = round(net_margin * 100, 2)
+                            lay_stake = arb_calc_lay_stake(100, pin_price, lay_price)
+                            raw_gap = round((pin_price - lay_price) / lay_price * 100, 2)
+
+                            msg = (
+                                f"<b>💰 ARB: {cand['runner_name']}</b>\n"
+                                f"📋 {orig_row.get('event_name', '?')}\n\n"
+                                f"📌 PIN Back: <b>{pin_price:.3f}</b>\n"
+                                f"🔄 BF Lay: <b>{lay_price:.3f}</b>\n"
+                                f"📊 Raw Gap: <b>+{raw_gap:.2f}%</b>\n"
+                                f"💷 P&L: <b>+£{pnl:.2f}</b>/£100 (after {ARB_COMMISSION*100:.0f}% comm)\n"
+                                f"💷 Lay £{lay_stake:.2f} per £100 back\n"
+                                f"💰 BF Vol: £{volume:,}\n"
+                                f"⏰ {start_time_str[:16] if start_time_str else '?'}"
+                            )
+
+                            # Build EXECUTE ARB button with AO context
+                            reply_markup = None
+                            arb_id = str(row_id)
+                            ao_ctx = _ao_execution_context.get(row_id)
+                            if ao_ctx and register_pending_arb and orig_row.get('market_id') and orig_row.get('selection_id'):
+                                exec_context = {
+                                    'market_feed_id': row_id,
+                                    'sport': orig_row.get('sport', '?'),
+                                    'event_name': orig_row.get('event_name', '?'),
+                                    'runner_name': cand['runner_name'],
+                                    'market_id': orig_row.get('market_id'),
+                                    'selection_id': orig_row.get('selection_id'),
+                                    'pin_back': pin_price,
+                                    'bf_lay': lay_price,
+                                    **ao_ctx,
+                                }
+                                register_pending_arb(arb_id, exec_context)
+                                reply_markup = {
+                                    "inline_keyboard": [[
+                                        {"text": "⚡ EXECUTE ARB", "callback_data": f"exec_arb:{arb_id}"}
+                                    ]]
+                                }
+
+                            telegram_alerts.send_telegram_message(msg, reply_markup=reply_markup)
+                            logger.info(
+                                f"SOURCE ARB: {cand['runner_name']} | PIN {pin_price:.3f} > BF lay {lay_price:.3f} | "
+                                f"net {margin_pct:.2f}% | vol=£{volume}"
+                            )
 
     # --- WRITE PIN PRICES TO DB ---
     if updates:
