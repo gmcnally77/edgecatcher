@@ -21,21 +21,21 @@ from steamer_detector import (
 )
 
 META_PIN = {
-    'runner_name': 'Miami Heat',
-    'event_name': 'Utah Jazz v Miami Heat',
+    'runner_name': 'Boston Celtics',
+    'event_name': 'Boston Celtics @ Golden State Warriors',
     'sport': 'Basketball',
-    'start_time': '2026-02-20T00:40:00Z',
-    'paddy_link': 'https://www.paddypower.com/basketball/nba/utah-jazz-v-miami-heat-12345678',
+    'start_time': '2026-02-20T03:10:00Z',
+    'paddy_link': 'https://www.paddypower.com/basketball/nba/boston-celtics-golden-state-warriors-35260985',
 }
 
 META_BF = {
-    'runner_name': 'Arsenal',
-    'event_name': 'Arsenal v Chelsea',
+    'runner_name': 'Man City',
+    'event_name': 'Man City v Newcastle',
     'sport': 'Soccer',
-    'start_time': '2026-02-22T15:00:00Z',
-    'paddy_link': 'https://www.paddypower.com/football/english-premier-league/arsenal-v-chelsea-87654321',
+    'start_time': '2026-02-21T20:00:00Z',
+    'paddy_link': 'https://www.paddypower.com/football/english-premier-league/man-city-v-newcastle-35240879',
     'volume': 62450,
-    'exchange_link': 'https://www.betfair.com/exchange/plus/en/football/english-premier-league/arsenal-v-chelsea-betting-87654321',
+    'exchange_link': 'https://www.betfair.com/exchange/plus/en/football/english-premier-league/man-city-v-newcastle-betting-35240879',
 }
 
 def clear():
