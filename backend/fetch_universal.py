@@ -699,43 +699,41 @@ def _ao_fetch_one_tick():
                 if has_odds or cache_entry_key not in new_entries:
                     new_entries[cache_entry_key] = m
 
-        # Snapshot vs delta merge
-        is_full_snapshot = cache_key not in _asianodds_cache_time
-
-        if is_full_snapshot and new_entries:
-            # Full snapshot — replace cache entirely
-            existing = new_entries
-        else:
-            # Delta — merge new entries into existing cache
-            existing = _asianodds_cache.get(cache_key, {})
-            if not isinstance(existing, dict):
-                existing = {}
-            for remove_key in removals:
-                existing.pop(remove_key, None)
-            # Merge: only overwrite if new entry has 1X2/ML odds
-            # (prevents HDP/O/U deltas from wiping cached PIN prices)
-            for ek, match in new_entries.items():
-                new_has_odds = False
-                for odds_field in ['FullTimeOneXTwo', 'FullTimeMoneyLine']:
-                    od = match.get(odds_field) or {}
-                    if isinstance(od, dict) and od.get('BookieOdds'):
-                        new_has_odds = True
-                        break
-                if new_has_odds or ek not in existing:
-                    existing[ek] = match
+        # Always merge — never replace cache with partial snapshot data.
+        # AO sessions return incomplete snapshots after maintenance/re-auth,
+        # which would wipe a healthy cache built up over hours.
+        existing = _asianodds_cache.get(cache_key, {})
+        if not isinstance(existing, dict):
+            existing = {}
+        for remove_key in removals:
+            existing.pop(remove_key, None)
+        # Merge: only overwrite if new entry has 1X2/ML odds
+        # (prevents HDP/O/U deltas from wiping cached PIN prices)
+        for ek, match in new_entries.items():
+            new_has_odds = False
+            for odds_field in ['FullTimeOneXTwo', 'FullTimeMoneyLine']:
+                od = match.get(odds_field) or {}
+                if isinstance(od, dict) and od.get('BookieOdds'):
+                    new_has_odds = True
+                    break
+            if new_has_odds or ek not in existing:
+                existing[ek] = match
 
         _asianodds_cache[cache_key] = existing
 
-        # Only set cache_time if we got data. If empty snapshot,
-        # leave unset so next tick retries the snapshot opportunity.
-        if new_entries or not is_full_snapshot:
+        # Always mark cache_time so we use delta cursors on next poll
+        if new_entries:
+            _asianodds_cache_time[cache_key] = time.time()
+        elif cache_key not in _asianodds_cache_time and existing:
+            # Have cached data from disk but no new AO data yet — switch to
+            # delta mode to stop requesting full snapshots that could be empty
             _asianodds_cache_time[cache_key] = time.time()
 
         # --- OBSERVABILITY ---
         _record_fetch_metrics(sport_name, market_type, len(matches), len(new_entries), len(existing), stale_count, new_cursor)
 
         mtype_name = {0: "Live", 1: "Today", 2: "Early"}.get(market_type, str(market_type))
-        mode = "SNAPSHOT" if is_full_snapshot else "DELTA"
+        mode = "SNAPSHOT" if cache_key not in _asianodds_cache_time else "DELTA"
         cursor_info = f", cursor={new_cursor}" if new_cursor is not None else ""
         stale_info = f", {stale_count} stale dropped" if stale_count else ""
         logger.info(f"AO {sport_name} {mtype_name} [{mode}]: {len(matches)} raw, {len(new_entries)} deduped, {len(existing)} cached{cursor_info}{stale_info}")
