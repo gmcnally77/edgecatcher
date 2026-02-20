@@ -243,6 +243,13 @@ def _execute_arb_inner(ctx):
         )
         logger.info(f"GetPlacementInfo params: {_placement_params}")
 
+        # Prime AO's server-side game list — GetPlacementInfo requires
+        # a GetFeeds call in the same session to know the game exists
+        sport_id = ctx.get('ao_sports_type', 1)
+        market_type = ctx.get('ao_market_type_id', 1)
+        logger.info(f"Priming AO feed (sport={sport_id}, market={market_type})...")
+        ao_client.get_feeds(sport_id=sport_id, market_type_id=market_type, odds_format='00')
+
         placement_info = ao_client.get_placement_info(**_placement_params)
 
         # Retry with re-auth on negative error codes (session/server errors)
@@ -253,6 +260,8 @@ def _execute_arb_inner(ctx):
             ao_client.ao_token = None
             ao_client.ao_key = None
             if ao_client.ensure_authenticated():
+                # Re-prime after re-auth
+                ao_client.get_feeds(sport_id=sport_id, market_type_id=market_type, odds_format='00')
                 placement_info = ao_client.get_placement_info(**_placement_params)
 
         if not placement_info or placement_info.get('Code') != 0:
