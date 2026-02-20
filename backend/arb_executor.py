@@ -231,7 +231,7 @@ def _execute_arb_inner(ctx):
             _log_execution(ctx, status='failed', error_message='AO client unavailable')
             return
 
-        placement_info = ao_client.get_placement_info(
+        _placement_params = dict(
             game_id=ctx['ao_game_id'],
             game_type=ctx.get('ao_game_type', 'X'),
             is_full_time=ctx.get('ao_is_full_time', 1),
@@ -239,12 +239,27 @@ def _execute_arb_inner(ctx):
             market_type_id=ctx.get('ao_market_type_id', 1),
             odds_format='00',
             odds_name=ctx.get('ao_odds_name', 'HomeOdds'),
-            sports_type=ctx.get('ao_sports_type', 1)
+            sports_type=ctx.get('ao_sports_type', 1),
         )
+        logger.info(f"GetPlacementInfo params: {_placement_params}")
+
+        placement_info = ao_client.get_placement_info(**_placement_params)
+
+        # Retry with re-auth on negative error codes (session/server errors)
+        if placement_info and isinstance(placement_info.get('Code'), int) and placement_info['Code'] < 0:
+            code = placement_info['Code']
+            result_body = placement_info.get('Result', {})
+            logger.warning(f"GetPlacementInfo failed Code={code}, Result={result_body}. Re-authing and retrying...")
+            ao_client.ao_token = None
+            ao_client.ao_key = None
+            if ao_client.ensure_authenticated():
+                placement_info = ao_client.get_placement_info(**_placement_params)
 
         if not placement_info or placement_info.get('Code') != 0:
             code = placement_info.get('Code') if placement_info else None
-            _send_msg(f"❌ AO GetPlacementInfo failed (Code={code}). Aborting.")
+            result_body = placement_info.get('Result', {}) if placement_info else {}
+            logger.error(f"GetPlacementInfo final failure: Code={code}, Result={result_body}")
+            _send_msg(f"❌ AO GetPlacementInfo failed (Code={code}). Aborting.\n{result_body}")
             _log_execution(ctx, status='failed',
                            error_message=f'AO placement info failed: Code={code}')
             return
