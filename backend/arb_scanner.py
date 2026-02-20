@@ -9,10 +9,6 @@ import logging
 from datetime import datetime, timezone, timedelta
 
 from telegram_alerts import send_telegram_message
-try:
-    from telegram_callback import register_pending_arb
-except ImportError:
-    register_pending_arb = None
 
 logger = logging.getLogger(__name__)
 
@@ -319,52 +315,8 @@ def run_arb_scan(supabase_client, ao_context=None):
                 f"raw +{arb['raw_margin_pct']:.2f}% | net {arb['margin_pct']:.2f}% | vol=£{arb['volume']}"
             )
 
-            # Live Telegram alert — only real arbs (net positive after commission)
-            if arb['is_arb'] and arb['volume'] >= ARB_MIN_VOLUME:
-                lay_stake = calc_lay_stake(100, arb['pin_back'], arb['bf_lay'])
-                pnl = arb['profit_per_100']
-                if arb['is_arb']:
-                    label = "💰 ARB"
-                    pnl_str = f"+£{pnl:.2f}"
-                else:
-                    label = "🔄 CHURN"
-                    pnl_str = f"-£{abs(pnl):.2f}"
-                msg = (
-                    f"<b>{label}: {arb['runner']}</b>\n"
-                    f"📋 {arb['event']}\n\n"
-                    f"📌 PIN Back: <b>{arb['pin_back']:.3f}</b>\n"
-                    f"🔄 BF Lay: <b>{arb['bf_lay']:.3f}</b>\n"
-                    f"📊 Raw Gap: <b>+{arb['raw_margin_pct']:.2f}%</b>\n"
-                    f"💷 P&L: <b>{pnl_str}</b>/£100 (after {BETFAIR_COMMISSION*100:.0f}% comm)\n"
-                    f"💷 Lay £{lay_stake:.2f} per £100 back\n"
-                    f"💰 BF Vol: £{arb['volume']:,}\n"
-                    f"⏰ {arb['start_time'][:16] if arb['start_time'] else '?'}"
-                )
-
-                # Register pending arb and add EXECUTE button if AO context available
-                reply_markup = None
-                arb_id = str(mid)
-                ao_ctx = (ao_context or {}).get(mid)
-                if ao_ctx and register_pending_arb and arb['market_id'] and arb['selection_id']:
-                    exec_context = {
-                        'market_feed_id': mid,
-                        'sport': arb['sport'],
-                        'event_name': arb['event'],
-                        'runner_name': arb['runner'],
-                        'market_id': arb['market_id'],
-                        'selection_id': arb['selection_id'],
-                        'pin_back': arb['pin_back'],
-                        'bf_lay': arb['bf_lay'],
-                        **ao_ctx,
-                    }
-                    register_pending_arb(arb_id, exec_context)
-                    reply_markup = {
-                        "inline_keyboard": [[
-                            {"text": "⚡ EXECUTE ARB", "callback_data": f"exec_arb:{arb_id}"}
-                        ]]
-                    }
-
-                send_telegram_message(msg, reply_markup=reply_markup)
+            # Telegram alerts handled by source-level detection in fetch_universal.py
+            # (fires instantly when PIN price arrives, not after Supabase round-trip)
         else:
             # Update peak
             if arb['margin_pct'] > _open_arbs[mid]['peak_margin']:
