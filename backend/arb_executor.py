@@ -250,7 +250,8 @@ def _execute_arb_inner(ctx):
             return
 
         result = placement_info.get('Result') or {}
-        placement_data = result.get('PlacementData') or result.get('Data') or [{}]
+        placement_data = (result.get('OddsPlacementData') or
+                          result.get('PlacementData') or result.get('Data') or [{}])
         if isinstance(placement_data, list) and placement_data:
             pd_item = placement_data[0]
         else:
@@ -261,6 +262,7 @@ def _execute_arb_inner(ctx):
         ao_max_amount = float(pd_item.get('MaximumAmount') or pd_item.get('MaxAmount') or 99999)
 
         if live_pin_price <= 1.01:
+            logger.error(f"AO price invalid. Result keys: {list(result.keys())}, pd_item: {pd_item}")
             _send_msg(f"❌ AO live price invalid: {live_pin_price}. Aborting.")
             _log_execution(ctx, status='failed',
                            error_message=f'AO price invalid: {live_pin_price}')
